@@ -54,6 +54,11 @@ main{flex:1;display:flex;min-height:0;position:relative}
 .pitem small{color:var(--muted);font-weight:400;font-size:11.5px}
 .addrow{margin:6px;border:1px dashed var(--line)}
 .back{display:none}
+body.focus #secPane,body.focus #pagePane{display:none}
+body.focus #results{left:0;border-left:0}
+body.focus #body{margin:0 auto}
+body.focus #title,body.focus #meta{max-width:920px;margin-left:auto;margin-right:auto}
+#focusBtn.on{background:var(--accent-soft)}
 .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--panel);min-height:51px}
 .sp{flex:1}
 #status{font-size:12px;color:var(--muted);padding:0 6px}
@@ -111,6 +116,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
   body[data-view="pages"] #secPane,body[data-view="pages"] #editorPane{display:none}
   body[data-view="editor"] #secPane,body[data-view="editor"] #pagePane{display:none}
   .back{display:inline-block}
+  #focusBtn{display:none}
   #results{left:0;border-left:0}
   #title{padding:12px 14px 2px}
   #meta{padding:0 14px}
@@ -142,6 +148,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
   <section id="editorPane" class="pane">
     <div class="toolbar">
       <button class="back" data-back="pages" title="Wstecz">‹</button>
+      <button id="focusBtn" title="Pełny widok strony (Ctrl+\)">⤢</button>
       <button data-cmd="bold" title="Pogrubienie (Ctrl+B)"><b>B</b></button>
       <button data-cmd="italic" title="Kursywa (Ctrl+I)"><i>I</i></button>
       <button data-cmd="underline" title="Podkreślenie (Ctrl+U)"><u>U</u></button>
@@ -188,6 +195,12 @@ try{settings=JSON.parse(localStorage.getItem(SKEY))||{}}catch(e){}
 if(!settings.scope)settings.scope="sec";
 if(settings.loose===undefined)settings.loose=true;
 if(!settings.theme)settings.theme="auto";
+function applyFocus(){
+  document.body.classList.toggle("focus",!!settings.focus);
+  const b=document.getElementById("focusBtn");
+  if(b){b.classList.toggle("on",!!settings.focus);b.textContent=settings.focus?"⤡":"⤢";b.title=settings.focus?"Pokaż kolumny (Ctrl+\\)":"Pełny widok strony (Ctrl+\\)";}
+}
+function toggleFocus(v){settings.focus=v===undefined?!settings.focus:v;saveSettings();applyFocus();}
 function saveSettings(){try{localStorage.setItem(SKEY,JSON.stringify(settings))}catch(e){}}
 function applyTheme(){const r=document.documentElement;if(settings.theme==="auto")delete r.dataset.theme;else r.dataset.theme=settings.theme;}
 
@@ -664,7 +677,8 @@ $("#resClose").onclick=closeResults;
 document.querySelectorAll("#scopes button").forEach(b=>b.onclick=()=>{settings.scope=b.dataset.s;saveSettings();renderResults();});
 $("#loose").onchange=e=>{settings.loose=e.target.checked;saveSettings();renderResults();};
 document.addEventListener("keydown",e=>{
-  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="f"){e.preventDefault();$("#q").focus();$("#q").select();}
+  if((e.ctrlKey||e.metaKey)&&e.key==="\\"){e.preventDefault();toggleFocus();}
+  else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="f"){e.preventDefault();$("#q").focus();$("#q").select();}
   else if(e.key==="Escape"){if(!$("#modal").classList.contains("hidden"))closeModal();else closeResults();}
 });
 $("#nbSel").onchange=e=>{const v=e.target.value;if(v==="__new"){newNb();return;}ui.nb=v;ui.sec=null;ui.page=null;render();save();};
@@ -682,6 +696,7 @@ $("#addPage").onclick=()=>{
 };
 $("#lockBtn").onclick=()=>{const s=curSec();if(s)lockSec(s);};
 $("#pageMore").onclick=pageMenu;
+$("#focusBtn").onclick=()=>toggleFocus();
 document.querySelectorAll(".back").forEach(b=>b.onclick=()=>setView(b.dataset.back));
 $("#title").addEventListener("input",()=>{const p=curPage();if(!p)return;p.title=$("#title").value;p.updated=Date.now();touch(curSec());renderPages();});
 $("#title").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("#body").focus();}});
@@ -708,7 +723,7 @@ document.querySelectorAll("[data-cmd]").forEach(b=>{
 try{document.execCommand("defaultParagraphSeparator",false,"p");}catch(e){}
 
 /* ---------- start ---------- */
-applyTheme();setStatus("Wczytywanie…");
+applyTheme();applyFocus();setStatus("Wczytywanie…");
 load().then(()=>{render();warmCache();setView(curPage()?"editor":"sections");setStatus("");
   if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 }).catch(e=>{alert("Błąd wczytywania notatek: "+e.message);});
