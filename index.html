@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Notatki</title>
+<meta name="theme-color" content="#1b1b21">
+<style>
+:root{
+  --bg:#f6f6f8;--panel:#ffffff;--panel2:#efeff3;--text:#1d1d22;--muted:#6b6b76;--line:#dcdce3;
+  --accent:#7c3aed;--accent-soft:#ede5ff;--mark:#ffe36e;--danger:#c62828;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#121216;--panel:#1b1b21;--panel2:#24242c;--text:#e9e9ee;--muted:#9a9aa6;--line:#30303a;
+    --accent:#a78bfa;--accent-soft:#2e2440;--mark:#7a6200;--danger:#ef5350;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121216;--panel:#1b1b21;--panel2:#24242c;--text:#e9e9ee;--muted:#9a9aa6;--line:#30303a;
+  --accent:#a78bfa;--accent-soft:#2e2440;--mark:#7a6200;--danger:#ef5350;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+button{font:inherit;color:inherit;background:transparent;border:1px solid transparent;border-radius:8px;padding:5px 9px;cursor:pointer;min-width:34px;min-height:34px}
+button:hover{background:var(--panel2)}
+input,select{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:0}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.hidden{display:none!important}
+.muted{color:var(--muted)}
+header{display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{font-weight:700;white-space:nowrap}
+.search{flex:1;display:flex;min-width:0}
+.search input{flex:1}
+main{flex:1;display:flex;min-height:0;position:relative}
+.pane{display:flex;flex-direction:column;min-height:0;min-width:0;border-right:1px solid var(--line);background:var(--panel)}
+#secPane{width:210px;flex:none}
+#pagePane{width:240px;flex:none;background:var(--panel2)}
+#editorPane{flex:1;background:var(--bg);border-right:0}
+.paneHead{display:flex;align-items:center;gap:4px;padding:8px;border-bottom:1px solid var(--line);min-height:51px}
+.paneHead select{flex:1}
+.list{flex:1;overflow:auto;padding:4px}
+.item{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;user-select:none}
+.item:hover{background:var(--panel2)}
+#pagePane .item:hover{background:var(--panel)}
+.item.active{background:var(--accent-soft);font-weight:600}
+.dot{width:6px;align-self:stretch;border-radius:3px;min-height:20px;flex:none}
+.name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.more{visibility:hidden;min-height:28px;padding:0 6px}
+.item.active .more,.item:hover .more{visibility:visible}
+@media (hover:none){.more{visibility:visible}}
+.pitem{flex-direction:column;align-items:stretch;gap:0}
+.pitem small{color:var(--muted);font-weight:400;font-size:11.5px}
+.addrow{margin:6px;border:1px dashed var(--line)}
+.back{display:none}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--panel);min-height:51px}
+.sp{flex:1}
+#status{font-size:12px;color:var(--muted);padding:0 6px}
+.scroll{flex:1;overflow:auto}
+#title{display:block;width:100%;font-size:22px;font-weight:700;border:0;background:transparent;padding:16px 20px 2px;border-radius:0}
+#title:focus{outline:none}
+#meta{padding:0 20px;color:var(--muted);font-size:12px}
+#body{padding:12px 20px 80px;outline:none;max-width:920px;min-height:60%}
+#body:empty:before{content:"Zacznij pisać…";color:var(--muted)}
+#body p{margin:0 0 .45em}
+#body h2{font-size:1.25em;margin:.8em 0 .35em}
+#body table{border-collapse:collapse;margin:.5em 0}
+#body td{border:1px solid var(--line);padding:4px 8px;vertical-align:top}
+#body td p{margin:0}
+#body ul,#body ol{margin:.2em 0 .5em;padding-left:1.6em}
+#body a{color:var(--accent)}
+#body .ph{color:var(--muted);font-size:.9em}
+.empty{padding:28px 20px;color:var(--muted);text-align:center}
+.locked{padding:30px 16px;text-align:center;color:var(--muted)}
+.locked button{margin-top:10px;border:1px solid var(--line);background:var(--panel)}
+#results{position:absolute;top:0;bottom:0;right:0;left:210px;background:var(--bg);z-index:20;display:flex;flex-direction:column;border-left:1px solid var(--line)}
+.resHead{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{border-radius:0;min-height:32px;padding:4px 10px;font-size:13.5px}
+.seg button.on{background:var(--accent);color:#fff}
+.chk{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer}
+#resClose{margin-left:auto}
+#resInfo{padding:6px 14px;font-size:12.5px}
+.hit{padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.hit:hover{background:var(--panel)}
+.ht{font-weight:600}
+.hp{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.hp .dot{width:10px;height:10px;min-height:0;align-self:center}
+.hs{font-size:13.5px;margin-top:2px;opacity:.88}
+mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
+::highlight(hit){background-color:#ffd33d;color:#000}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;width:min(420px,100%);max-height:90vh;overflow:auto}
+.box h3{margin:0 0 12px;font-size:17px}
+.box label{display:block;margin-bottom:10px;font-size:13.5px;color:var(--muted)}
+.box label input{display:block;width:100%;margin-top:4px}
+.note{font-size:13px;color:var(--muted)}
+.btns{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.primary{background:var(--accent);color:#fff}
+.primary:hover{background:var(--accent);filter:brightness(1.1)}
+.opt{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px}
+.opt.danger{color:var(--danger)}
+.opts.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:6px}
+.opts.grid .opt{justify-content:center}
+.sw{display:inline-block;width:24px;height:24px;border-radius:6px;flex:none}
+@media (max-width:699px){
+  header .brand{display:none}
+  #secPane,#pagePane,#editorPane{width:100%;border-right:0}
+  body[data-view="sections"] #pagePane,body[data-view="sections"] #editorPane{display:none}
+  body[data-view="pages"] #secPane,body[data-view="pages"] #editorPane{display:none}
+  body[data-view="editor"] #secPane,body[data-view="editor"] #pagePane{display:none}
+  .back{display:inline-block}
+  #results{left:0;border-left:0}
+  #title{padding:12px 14px 2px}
+  #meta{padding:0 14px}
+  #body{padding:10px 14px 80px}
+}
+</style>
+</head>
+<body data-view="sections">
+<header>
+  <span class="brand">📝 Notatki</span>
+  <div class="search"><input id="q" type="search" placeholder="Szukaj…  (Ctrl+F)" autocomplete="off"></div>
+  <button id="appMore" title="Ustawienia">⚙</button>
+</header>
+<main>
+  <section id="secPane" class="pane">
+    <div class="paneHead"><select id="nbSel" title="Notes"></select><button id="nbMore" title="Notes – opcje">⋯</button></div>
+    <div id="secList" class="list"></div>
+    <button id="addSec" class="addrow">＋ Nowa zakładka</button>
+  </section>
+  <section id="pagePane" class="pane">
+    <div class="paneHead">
+      <button class="back" data-back="sections" title="Wstecz">‹</button>
+      <span class="dot" id="secDot"></span><b id="secName" class="name"></b>
+      <button id="lockBtn" title="Zablokuj zakładkę" class="hidden">🔒</button>
+      <button id="addPage" title="Nowa strona">＋</button>
+    </div>
+    <div id="pageList" class="list"></div>
+  </section>
+  <section id="editorPane" class="pane">
+    <div class="toolbar">
+      <button class="back" data-back="pages" title="Wstecz">‹</button>
+      <button data-cmd="bold" title="Pogrubienie (Ctrl+B)"><b>B</b></button>
+      <button data-cmd="italic" title="Kursywa (Ctrl+I)"><i>I</i></button>
+      <button data-cmd="underline" title="Podkreślenie (Ctrl+U)"><u>U</u></button>
+      <button data-cmd="strikeThrough" title="Przekreślenie"><s>S</s></button>
+      <button data-cmd="h2" title="Nagłówek">H</button>
+      <button data-cmd="insertUnorderedList" title="Lista punktowana">•</button>
+      <button data-cmd="insertOrderedList" title="Lista numerowana">1.</button>
+      <button data-cmd="removeFormat" title="Usuń formatowanie">⌫</button>
+      <span class="sp"></span><span id="status"></span>
+      <button id="pageMore" title="Strona – opcje">⋯</button>
+    </div>
+    <div id="noPage" class="empty">Wybierz stronę z listy albo dodaj nową (＋).</div>
+    <div id="doc" class="scroll hidden">
+      <input id="title" placeholder="Tytuł strony" autocomplete="off">
+      <div id="meta"></div>
+      <div id="body" contenteditable="true" spellcheck="true"></div>
+    </div>
+  </section>
+  <div id="results" class="hidden">
+    <div class="resHead">
+      <div id="scopes" class="seg">
+        <button data-s="page">Ta strona</button><button data-s="sec">Ta zakładka</button><button data-s="nb">Ten notes</button><button data-s="all">Wszystko</button>
+      </div>
+      <label class="chk"><input type="checkbox" id="loose"> bez ogonków (ą=a, ø=o)</label>
+      <button id="resClose" title="Zamknij (Esc)">✕</button>
+    </div>
+    <div id="resInfo" class="muted"></div>
+    <div id="resList" class="list"></div>
+  </div>
+</main>
+<div id="modal" class="modal hidden"></div>
+<input type="file" id="file" accept=".json,application/json" class="hidden">
+<script>
+"use strict";
+const $=s=>document.querySelector(s);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const COLORS=["#e5484d","#f76b15","#d4a017","#30a46c","#12a594","#0090ff","#3e63dd","#8e4ec6","#d6409f","#8d8d8d","#a18072","#5b8c00"];
+const KEY="notatki.v1", SKEY="notatki.settings";
+
+/* ---------- ustawienia ---------- */
+let settings={};
+try{settings=JSON.parse(localStorage.getItem(SKEY))||{}}catch(e){}
+if(!settings.scope)settings.scope="sec";
+if(settings.loose===undefined)settings.loose=true;
+if(!settings.theme)settings.theme="auto";
+function saveSettings(){try{localStorage.setItem(SKEY,JSON.stringify(settings))}catch(e){}}
+function applyTheme(){const r=document.documentElement;if(settings.theme==="auto")delete r.dataset.theme;else r.dataset.theme=settings.theme;}
+
+/* ---------- dane ---------- */
+let state=null;
+let mem={unlocked:{},dirtyEnc:new Set()};
+const ui={nb:null,sec:null,page:null};
+
+function demo(){
+  const p=(t,h)=>({id:uid(),title:t,html:h,updated:Date.now()});
+  return {version:1,notebooks:[{id:uid(),name:"Mój notes",sections:[
+    {id:uid(),name:"Słówka",color:COLORS[0],enc:null,pages:[
+      p("Przykładowe zwroty","<p><b>å ta det med ro</b> - spokojnie, bez pośpiechu</p><p><b>det går som smurt</b> - idzie jak po maśle</p><p><b>żółw</b> - skilpadde</p>"),
+      p("Hiszpański","<p><b>poco a poco</b> - krok po kroku, powoli</p>")]},
+    {id:uid(),name:"Przemyślenia",color:COLORS[5],enc:null,pages:[
+      p("Pierwsza notatka","<p>To jest przykładowa notatka. Możesz ją usunąć (⋯ → Usuń stronę).</p>")]},
+    {id:uid(),name:"Sentencje",color:COLORS[7],enc:null,pages:[]}
+  ]}],ui:{}};
+}
+/* ---------- baza danych (IndexedDB – duża pojemność) ---------- */
+let db=null;           // null => tryb awaryjny (localStorage)
+const dirtySecs=new Set(), delSecs=new Set();
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    let rq;try{rq=indexedDB.open("notatki",1);}catch(e){rej(e);return;}
+    rq.onupgradeneeded=()=>rq.result.createObjectStore("kv");
+    rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);
+  });
+}
+function idbAll(){
+  return new Promise((res,rej)=>{
+    const t=db.transaction("kv","readonly"),st=t.objectStore("kv"),out={};
+    const rq=st.openCursor();
+    rq.onsuccess=()=>{const c=rq.result;if(c){out[c.key]=c.value;c.continue();}else res(out);};
+    rq.onerror=()=>rej(rq.error);
+  });
+}
+function idbWrite(puts,dels){
+  return new Promise((res,rej)=>{
+    const t=db.transaction("kv","readwrite"),st=t.objectStore("kv");
+    for(const [k,v] of puts)st.put(v,k);
+    for(const k of dels)st.delete(k);
+    t.oncomplete=()=>res();t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error||new Error("Zapis przerwany"));
+  });
+}
+function idbClear(){return new Promise((res,rej)=>{const t=db.transaction("kv","readwrite");t.objectStore("kv").clear();t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});}
+function metaOf(){
+  return {version:2,ui:{nb:ui.nb,sec:ui.sec,page:ui.page},notebooks:state.notebooks.map(n=>({id:n.id,name:n.name,sections:n.sections.map(s=>({id:s.id,name:s.name,color:s.color,isEnc:!!s.enc}))}))};
+}
+function markAllDirty(){state.notebooks.forEach(n=>n.sections.forEach(s=>dirtySecs.add(s.id)));}
+async function load(){
+  try{db=await idbOpen();}catch(e){db=null;}
+  if(db){
+    const all=await idbAll();
+    if(all.meta){
+      state={version:2,notebooks:all.meta.notebooks.map(n=>({id:n.id,name:n.name,sections:n.sections.map(s=>{
+        const r=all["sec:"+s.id]||{};return {id:s.id,name:s.name,color:s.color,enc:r.enc||null,pages:r.enc?null:(r.pages||[])};
+      })}))};
+      Object.assign(ui,all.meta.ui||{});
+      return;
+    }
+    // pierwsze uruchomienie: przenieś ewentualne dane z wersji testowej
+    try{const raw=localStorage.getItem(KEY);if(raw)state=JSON.parse(raw);}catch(e){}
+    if(!state||!Array.isArray(state.notebooks)||!state.notebooks.length)state=demo();
+    Object.assign(ui,state.ui||{});
+    markAllDirty();await doSave();
+    try{localStorage.removeItem(KEY);}catch(e){}
+    return;
+  }
+  try{const raw=localStorage.getItem(KEY);if(raw)state=JSON.parse(raw);}catch(e){}
+  if(!state||!Array.isArray(state.notebooks)||!state.notebooks.length)state=demo();
+  Object.assign(ui,state.ui||{});
+  setTimeout(()=>alert("Uwaga: ta przeglądarka nie pozwala tu na dużą bazę danych – działa tryb awaryjny o małej pojemności (kilka MB). Otwórz aplikację w Edge lub Chrome albo z adresu na GitHubie."),300);
+}
+const curNb=()=>state.notebooks.find(n=>n.id===ui.nb)||state.notebooks[0];
+const curSec=()=>{const nb=curNb();return nb?nb.sections.find(s=>s.id===ui.sec):null;};
+function pagesOf(sec){if(!sec)return null;if(sec.enc){const u=mem.unlocked[sec.id];return u?u.pages:null;}return sec.pages||(sec.pages=[]);}
+function curPage(){const ps=pagesOf(curSec());return ps?ps.find(p=>p.id===ui.page):null;}
+function findSec(id){for(const nb of state.notebooks)for(const s of nb.sections)if(s.id===id)return s;return null;}
+function fixUi(){
+  const nb=curNb();ui.nb=nb.id;
+  if(!nb.sections.find(s=>s.id===ui.sec))ui.sec=nb.sections[0]?nb.sections[0].id:null;
+  const ps=pagesOf(curSec());
+  if(!ps||!ps.find(p=>p.id===ui.page))ui.page=null;
+}
+
+/* ---------- zapis ---------- */
+let saveT=null;
+function setStatus(t){$("#status").textContent=t;}
+function save(){clearTimeout(saveT);setStatus("…");saveT=setTimeout(doSave,400);}
+function touch(sec){if(sec){if(sec.enc)mem.dirtyEnc.add(sec.id);dirtySecs.add(sec.id);}save();}
+let saving=null;
+async function doSave(){
+  clearTimeout(saveT);saveT=null;
+  if(saving){await saving;}           // nie nakładaj zapisów na siebie
+  saving=(async()=>{
+    const keepS=[...dirtySecs],keepD=[...delSecs];
+    try{
+      for(const id of [...mem.dirtyEnc]){
+        const sec=findSec(id),u=mem.unlocked[id];
+        if(sec&&u&&sec.enc){sec.enc=await encryptPages(u.key,u.salt,u.pages);dirtySecs.add(id);}
+        mem.dirtyEnc.delete(id);
+      }
+      if(db){
+        const puts=[["meta",metaOf()]];
+        for(const id of [...dirtySecs]){const s=findSec(id);if(s)puts.push(["sec:"+id,s.enc?{enc:s.enc}:{pages:s.pages||[]}]);}
+        const dels=[...delSecs].map(id=>"sec:"+id);
+        dirtySecs.clear();delSecs.clear();
+        await idbWrite(puts,dels);
+      }else{
+        state.ui={nb:ui.nb,sec:ui.sec,page:ui.page};
+        localStorage.setItem(KEY,JSON.stringify(state));
+      }
+      setStatus("Zapisano");
+    }catch(e){
+      keepS.forEach(id=>dirtySecs.add(id));keepD.forEach(id=>delSecs.add(id));
+      setStatus("Błąd zapisu!");alert("Nie udało się zapisać notatek: "+e.message);
+    }
+  })();
+  await saving;saving=null;
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"&&(saveT||mem.dirtyEnc.size))doSave();});
+window.addEventListener("pagehide",()=>{if(saveT||mem.dirtyEnc.size)doSave();});
+
+/* ---------- szyfrowanie ---------- */
+const TE=new TextEncoder(),TD=new TextDecoder();
+function b64(buf){const b=new Uint8Array(buf);let s="";for(let i=0;i<b.length;i+=0x8000)s+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));return btoa(s);}
+function unb64(s){const bin=atob(s),b=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)b[i]=bin.charCodeAt(i);return b;}
+async function deriveKey(pw,salt){
+  const base=await crypto.subtle.importKey("raw",TE.encode(pw),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:250000,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+}
+async function encryptPages(key,salt,pages){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,TE.encode(JSON.stringify(pages)));
+  return {salt:b64(salt),iv:b64(iv),data:b64(ct)};
+}
+async function decryptPages(pw,e){
+  const salt=unb64(e.salt),key=await deriveKey(pw,salt);
+  const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(e.iv)},key,unb64(e.data));
+  return {key,salt,pages:JSON.parse(TD.decode(pt))};
+}
+async function setPassword(sec){
+  const r=await form((sec.enc?"Nowe hasło":"Ustaw hasło")+" – „"+sec.name+"”",
+    [{k:"a",label:"Hasło",type:"password"},{k:"b",label:"Powtórz hasło",type:"password"}],
+    "Uwaga: zapomnianego hasła NIE da się odzyskać – notatki z tej zakładki przepadną. Zapisz hasło w mSecure.");
+  if(!r)return;
+  if(!r.a){alert("Hasło nie może być puste.");return;}
+  if(r.a!==r.b){alert("Hasła się różnią.");return;}
+  const pages=pagesOf(sec)||[];
+  const salt=crypto.getRandomValues(new Uint8Array(16)),key=await deriveKey(r.a,salt);
+  sec.enc=await encryptPages(key,salt,pages);sec.pages=null;
+  mem.unlocked[sec.id]={key,salt,pages};mem.dirtyEnc.delete(sec.id);dirtySecs.add(sec.id);
+  save();render();
+}
+async function unlock(sec){
+  const r=await form("Zakładka „"+sec.name+"” jest chroniona",[{k:"pw",label:"Hasło",type:"password",ac:"current-password"}]);
+  if(!r)return false;
+  try{mem.unlocked[sec.id]=await decryptPages(r.pw,sec.enc);return true;}
+  catch(e){alert("Nieprawidłowe hasło.");return false;}
+}
+async function lockSec(sec){await doSave();delete mem.unlocked[sec.id];fixUi();render();}
+async function lockAll(){await doSave();mem.unlocked={};fixUi();render();}
+function removePassword(sec){
+  const u=mem.unlocked[sec.id];if(!u)return;
+  if(!confirm("Usunąć hasło z zakładki „"+sec.name+"”? Jej treść nie będzie już szyfrowana."))return;
+  sec.pages=u.pages;sec.enc=null;delete mem.unlocked[sec.id];mem.dirtyEnc.delete(sec.id);dirtySecs.add(sec.id);
+  save();render();
+}
+
+/* ---------- okna dialogowe ---------- */
+function closeModal(){const m=$("#modal");m.classList.add("hidden");m.innerHTML="";m.onclick=null;}
+function form(title,fields,note){
+  return new Promise(res=>{
+    const m=$("#modal");
+    m.innerHTML=`<form class="box"><h3>${esc(title)}</h3>${fields.map(f=>`<label>${esc(f.label)}<input name="${f.k}" type="${f.type||"text"}" value="${esc(f.value||"")}" autocomplete="${f.ac||(f.type==="password"?"new-password":"off")}"></label>`).join("")}${note?`<p class="note">${esc(note)}</p>`:""}<div class="btns"><button type="button" data-c>Anuluj</button><button class="primary">OK</button></div></form>`;
+    m.classList.remove("hidden");
+    const fm=m.querySelector("form");
+    const done=v=>{closeModal();res(v);};
+    fm.onsubmit=e=>{e.preventDefault();const o={};fields.forEach(f=>o[f.k]=fm.elements[f.k].value);done(o);};
+    fm.querySelector("[data-c]").onclick=()=>done(null);
+    m.onclick=e=>{if(e.target===m)done(null);};
+    const first=fm.querySelector("input");if(first){first.focus();first.select();}
+  });
+}
+function menu(title,opts,grid){
+  const m=$("#modal");
+  m.innerHTML=`<div class="box"><h3>${esc(title)}</h3><div class="opts${grid?" grid":""}"></div><div class="btns"><button data-c>Zamknij</button></div></div>`;
+  const o=m.querySelector(".opts");
+  opts.forEach(op=>{const b=document.createElement("button");b.className="opt"+(op.danger?" danger":"");b.innerHTML=op.html||esc(op.label);b.onclick=()=>{closeModal();if(op.fn)op.fn();};o.append(b);});
+  m.querySelector("[data-c]").onclick=closeModal;
+  m.onclick=e=>{if(e.target===m)closeModal();};
+  m.classList.remove("hidden");
+}
+const move=(arr,i,d)=>{const j=i+d;if(j<0||j>=arr.length)return;[arr[i],arr[j]]=[arr[j],arr[i]];};
+
+/* ---------- widok ---------- */
+function setView(v){document.body.dataset.view=v;}
+function render(){fixUi();renderNb();renderSecs();renderPages();renderEditor();}
+function renderNb(){
+  const sel=$("#nbSel");
+  sel.innerHTML=state.notebooks.map(n=>`<option value="${n.id}">${esc(n.name)}</option>`).join("")+`<option value="__new">＋ Nowy notes…</option>`;
+  sel.value=ui.nb;
+}
+function renderSecs(){
+  const box=$("#secList");box.innerHTML="";
+  curNb().sections.forEach(sec=>{
+    const d=document.createElement("div");
+    d.className="item"+(sec.id===ui.sec?" active":"");
+    const lock=sec.enc?(mem.unlocked[sec.id]?"🔓":"🔒"):"";
+    d.innerHTML=`<span class="dot" style="background:${sec.color}"></span><span class="name">${esc(sec.name)}</span><span>${lock}</span><button class="more" title="Opcje">⋯</button>`;
+    d.onclick=()=>openSection(sec.id);
+    d.querySelector(".more").onclick=e=>{e.stopPropagation();secMenu(sec);};
+    box.append(d);
+  });
+  if(!curNb().sections.length)box.innerHTML=`<div class="empty">Brak zakładek.</div>`;
+}
+function renderPages(){
+  const sec=curSec(),box=$("#pageList");box.innerHTML="";
+  $("#secName").textContent=sec?sec.name:"";
+  $("#secDot").style.background=sec?sec.color:"transparent";
+  $("#lockBtn").classList.toggle("hidden",!(sec&&sec.enc&&mem.unlocked[sec.id]));
+  $("#addPage").classList.toggle("hidden",!sec||!pagesOf(sec));
+  if(!sec){box.innerHTML=`<div class="empty">Dodaj najpierw zakładkę.</div>`;return;}
+  const ps=pagesOf(sec);
+  if(!ps){
+    box.innerHTML=`<div class="locked">🔒<br>Zakładka chroniona hasłem<br><button id="unlockBtn">Odblokuj</button></div>`;
+    $("#unlockBtn").onclick=()=>openSection(sec.id);return;
+  }
+  if(!ps.length){box.innerHTML=`<div class="empty">Brak stron. Kliknij ＋, aby dodać.</div>`;return;}
+  ps.forEach(p=>{
+    const d=document.createElement("div");
+    d.className="item pitem"+(p.id===ui.page?" active":"");
+    d.innerHTML=`<span class="name">${esc(p.title||"(bez tytułu)")}</span><small>${new Date(p.updated).toLocaleDateString("pl-PL",{day:"numeric",month:"short",year:"numeric"})}</small>`;
+    d.onclick=()=>openPage(p.id);
+    box.append(d);
+  });
+}
+function renderEditor(){
+  const p=curPage();
+  if(window.CSS&&CSS.highlights)CSS.highlights.delete("hit");
+  $("#noPage").classList.toggle("hidden",!!p);
+  $("#doc").classList.toggle("hidden",!p);
+  $("#pageMore").classList.toggle("hidden",!p);
+  if(!p)return;
+  $("#title").value=p.title||"";
+  $("#body").innerHTML=p.html||"";
+  $("#meta").textContent="Zmieniono: "+new Date(p.updated).toLocaleString("pl-PL");
+  $("#doc").scrollTop=0;
+}
+async function openSection(id){
+  const sec=curNb().sections.find(s=>s.id===id);if(!sec)return;
+  if(sec.enc&&!mem.unlocked[id]){if(!await unlock(sec))return;}
+  if(ui.sec!==id){ui.sec=id;ui.page=null;}
+  render();setView("pages");save();
+}
+function openPage(id){ui.page=id;renderPages();renderEditor();setView("editor");save();}
+
+/* ---------- menu ---------- */
+function secMenu(sec){
+  const nb=curNb(),i=nb.sections.indexOf(sec),un=!!mem.unlocked[sec.id];
+  const opts=[
+    {label:"Zmień nazwę",fn:async()=>{const r=await form("Zmień nazwę zakładki",[{k:"n",label:"Nazwa",value:sec.name}]);if(r&&r.n.trim()){sec.name=r.n.trim();save();render();}}},
+    {label:"Zmień kolor",fn:()=>menu("Kolor zakładki",COLORS.map(c=>({html:`<span class="sw" style="background:${c}"></span>`,fn:()=>{sec.color=c;save();render();}})),true)},
+    {label:"↑ Przesuń w górę",fn:()=>{move(nb.sections,i,-1);save();render();}},
+    {label:"↓ Przesuń w dół",fn:()=>{move(nb.sections,i,1);save();render();}}
+  ];
+  if(!sec.enc)opts.push({label:"🔒 Ustaw hasło",fn:()=>setPassword(sec)});
+  else if(un)opts.push({label:"🔒 Zablokuj teraz",fn:()=>lockSec(sec)},{label:"Zmień hasło",fn:()=>setPassword(sec)},{label:"Usuń hasło",fn:()=>removePassword(sec)});
+  else opts.push({label:"🔓 Odblokuj",fn:()=>openSection(sec.id)});
+  opts.push({label:"Usuń zakładkę",danger:true,fn:()=>{
+    if(!confirm("Usunąć zakładkę „"+sec.name+"” razem ze wszystkimi stronami? Tego nie da się cofnąć."))return;
+    nb.sections.splice(nb.sections.indexOf(sec),1);delete mem.unlocked[sec.id];mem.dirtyEnc.delete(sec.id);dirtySecs.delete(sec.id);delSecs.add(sec.id);save();render();setView("sections");
+  }});
+  menu(sec.name,opts);
+}
+function pageMenu(){
+  const sec=curSec(),ps=pagesOf(sec),p=curPage();if(!p)return;const i=ps.indexOf(p);
+  menu(p.title||"(bez tytułu)",[
+    {label:"↑ Przesuń w górę",fn:()=>{move(ps,i,-1);touch(sec);renderPages();}},
+    {label:"↓ Przesuń w dół",fn:()=>{move(ps,i,1);touch(sec);renderPages();}},
+    {label:"Przenieś do innej zakładki…",fn:()=>moveMenu(p,sec)},
+    {label:"Usuń stronę",danger:true,fn:()=>{if(!confirm("Usunąć tę stronę?"))return;ps.splice(ps.indexOf(p),1);touch(sec);ui.page=null;render();setView("pages");}}
+  ]);
+}
+function moveMenu(p,from){
+  const opts=[];
+  for(const nb of state.notebooks)for(const s of nb.sections){
+    if(s===from)continue;const ps=pagesOf(s);if(!ps)continue;
+    opts.push({html:`<span class="sw" style="background:${s.color}"></span>${esc(nb.name)} › ${esc(s.name)}`,fn:()=>{
+      const src=pagesOf(from);src.splice(src.indexOf(p),1);ps.push(p);touch(from);touch(s);
+      ui.nb=nb.id;ui.sec=s.id;ui.page=p.id;render();
+    }});
+  }
+  if(!opts.length){alert("Brak innych dostępnych zakładek. Zablokowane trzeba najpierw odblokować.");return;}
+  menu("Przenieś do…",opts);
+}
+async function newNb(){
+  const r=await form("Nowy notes",[{k:"n",label:"Nazwa notesu"}]);
+  if(!r||!r.n.trim()){renderNb();return;}
+  const nb={id:uid(),name:r.n.trim(),sections:[]};state.notebooks.push(nb);ui.nb=nb.id;ui.sec=null;save();render();
+}
+function nbMenu(){
+  const nb=curNb();
+  menu(nb.name,[
+    {label:"＋ Nowy notes",fn:newNb},
+    {label:"Zmień nazwę notesu",fn:async()=>{const r=await form("Zmień nazwę notesu",[{k:"n",label:"Nazwa",value:nb.name}]);if(r&&r.n.trim()){nb.name=r.n.trim();save();render();}}},
+    {label:"Usuń notes",danger:true,fn:()=>{
+      if(state.notebooks.length<2){alert("To jedyny notes – nie można go usunąć.");return;}
+      if(!confirm("Usunąć notes „"+nb.name+"” ze wszystkimi zakładkami i stronami? Tego nie da się cofnąć."))return;
+      nb.sections.forEach(s=>{dirtySecs.delete(s.id);delSecs.add(s.id);});state.notebooks.splice(state.notebooks.indexOf(nb),1);ui.nb=null;save();render();
+    }}
+  ]);
+}
+function appMenu(){
+  const tn={auto:"jak w systemie",dark:"ciemny",light:"jasny"};
+  menu("Ustawienia",[
+    {label:"⬇ Pobierz kopię zapasową (plik)",fn:exportData},
+    {label:"⬆ Wczytaj kopię zapasową…",fn:()=>$("#file").click()},
+    {label:"🔒 Zablokuj wszystkie chronione zakładki",fn:lockAll},
+    {label:"Motyw: "+tn[settings.theme]+" (kliknij, aby zmienić)",fn:()=>{settings.theme={auto:"dark",dark:"light",light:"auto"}[settings.theme];saveSettings();applyTheme();appMenu();}}
+  ]);
+}
+async function exportData(){
+  await doSave();
+  const blob=new Blob([JSON.stringify(state,null,1)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="notatki-kopia-"+new Date().toISOString().slice(0,10)+".json";
+  document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+$("#file").onchange=async e=>{
+  const f=e.target.files[0];e.target.value="";if(!f)return;
+  try{
+    const o=JSON.parse(await f.text());
+    if(!o||!Array.isArray(o.notebooks)||!o.notebooks.length)throw new Error("To nie jest plik kopii notatek.");
+    if(!confirm("Zastąpić WSZYSTKIE obecne notatki zawartością pliku „"+f.name+"”?"))return;
+    setStatus("Wczytywanie…");
+    o.notebooks.forEach(n=>n.sections.forEach(x=>{if(x.enc)x.pages=null;else if(!x.pages)x.pages=[];}));
+    state=o;mem={unlocked:{},dirtyEnc:new Set()};ui.nb=ui.sec=ui.page=null;tcache.clear();
+    if(db){await idbClear();}
+    dirtySecs.clear();delSecs.clear();markAllDirty();
+    render();setView("sections");await doSave();
+    let np=0;o.notebooks.forEach(n=>n.sections.forEach(x=>np+=(x.pages||[]).length));
+    warmCache();alert("Kopia wczytana: "+np+" stron.");
+  }catch(err){alert("Nie udało się wczytać pliku: "+err.message);}
+};
+
+/* ---------- wyszukiwanie ---------- */
+const CHMAP={"ł":"l","ø":"o","æ":"a","ß":"s","đ":"d","œ":"o"};
+const NCACHE=new Map();
+function normChar(c){
+  let n=NCACHE.get(c);
+  if(n===undefined){n=CHMAP[c];if(n===undefined){n=c.normalize("NFD").replace(/[\u0300-\u036f]/g,"");if(n.length!==c.length)n=c;}NCACHE.set(c,n);}
+  return n;
+}
+function norm(s,loose){
+  s=s.replace(/\u0130/g,"i").toLowerCase();
+  return loose?s.replace(/[^\x00-\x7f]/g,normChar):s;
+}
+const tcache=new Map();
+const ENT={amp:"&",lt:"<",gt:">",quot:'"',apos:"'",nbsp:" "};
+function htmlToText(h){
+  return h.replace(/<(br|\/p|\/div|\/li|\/h\d|\/tr)\b[^>]*>/gi,"\n").replace(/<[^>]*>/g,"")
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi,(m,e)=>{if(e[0]==="#"){const n=e[1]==="x"||e[1]==="X"?parseInt(e.slice(2),16):parseInt(e.slice(1),10);return isNaN(n)?m:String.fromCodePoint(n);}const v=ENT[e.toLowerCase()];return v===undefined?m:v;});
+}
+function entry(p){
+  let c=tcache.get(p.id);
+  if(!c||c.h!==p.html||c.ti!==p.title){c={h:p.html,ti:p.title,t:htmlToText(p.html||""),n0:null,n1:null};tcache.set(p.id,c);}
+  return c;
+}
+function bodyText(p){return entry(p).t;}
+function searchText(p){
+  const c=entry(p),k=settings.loose?"n1":"n0";
+  if(c[k]===null)c[k]=norm((p.title||"")+"\n"+c.t,settings.loose);
+  return c[k];
+}
+function warmCache(){
+  const all=[];state.notebooks.forEach(n=>n.sections.forEach(s=>{const ps=pagesOf(s);if(ps)all.push(...ps);}));
+  let i=0;const step=()=>{const end=Math.min(all.length,i+300);for(;i<end;i++)searchText(all[i]);if(i<all.length)setTimeout(step,0);};
+  setTimeout(step,500);
+}
+function hl(text,terms){
+  const nt=norm(text,settings.loose),r=[];
+  for(const t of terms){let i=nt.indexOf(t);while(i>-1){r.push([i,i+t.length]);i=nt.indexOf(t,i+t.length);}}
+  r.sort((a,b)=>a[0]-b[0]);
+  let out="",pos=0;
+  for(const [a,b] of r){
+    if(b<=pos)continue;
+    const s=Math.max(a,pos);out+=esc(text.slice(pos,s))+"<mark>"+esc(text.slice(s,b))+"</mark>";pos=b;
+  }
+  return out+esc(text.slice(pos));
+}
+function snippet(text,terms){
+  const flat=text.replace(/\s+/g," ").trim(),nf=norm(flat,settings.loose);
+  let idx=-1;for(const t of terms){const i=nf.indexOf(t);if(i>-1&&(idx<0||i<idx))idx=i;}
+  if(idx<0)idx=0;
+  const start=Math.max(0,idx-60),end=Math.min(flat.length,start+220);
+  return (start>0?"…":"")+hl(flat.slice(start,end),terms)+(end<flat.length?"…":"");
+}
+function scopeList(){
+  const s=settings.scope,nb=curNb(),sec=curSec();
+  if(s==="page"||s==="sec")return sec?[[nb,sec]]:[];
+  if(s==="nb")return nb.sections.map(x=>[nb,x]);
+  const out=[];state.notebooks.forEach(n=>n.sections.forEach(x=>out.push([n,x])));return out;
+}
+function scopeLabel(){
+  const s=settings.scope,p=curPage(),sec=curSec();
+  if(s==="page")return "strona: "+(p?(p.title||"(bez tytułu)"):"— nie wybrano —");
+  if(s==="sec")return "zakładka: "+(sec?sec.name:"—");
+  if(s==="nb")return "notes: "+curNb().name;
+  return "wszystkie notesy";
+}
+let lastTerms=[];
+function renderResults(){
+  document.querySelectorAll("#scopes button").forEach(b=>b.classList.toggle("on",b.dataset.s===settings.scope));
+  $("#loose").checked=settings.loose;
+  const q=$("#q").value.trim(),box=$("#resList");
+  if(!q){$("#resInfo").textContent="Szukasz w: "+scopeLabel();box.innerHTML=`<div class="empty">Wpisz szukane słowo lub kilka słów.<br>Zakres zmieniasz przyciskami powyżej.</div>`;return;}
+  const nq=norm(q,settings.loose);
+  const quoted=/^".+"$/.test(nq.trim());
+  const phrase=nq.replace(/^"|"$/g,"").replace(/\s+/g," ").trim();
+  const terms=quoted?[phrase]:phrase.split(" ").filter(Boolean);lastTerms=terms;
+  let skipped=0,count=0;const hits=[];
+  for(const [nb,sec] of scopeList()){
+    const ps=pagesOf(sec);if(!ps){skipped++;continue;}
+    for(const p of ps){
+      if(settings.scope==="page"&&p.id!==ui.page)continue;
+      const nt=searchText(p);
+      if(terms.every(t=>nt.includes(t))){
+        count++;
+        const nti=norm(p.title||"",settings.loose);
+        const score=(nt.includes(phrase)?4:0)+(nti.includes(phrase)?2:0)+(terms.every(t=>nti.includes(t))?1:0);
+        hits.push({nb,sec,p,score});
+      }
+    }
+  }
+  hits.sort((a,b)=>b.score-a.score);
+  const shown=hits.slice(0,300);
+  $("#resInfo").textContent=count+" wyn."+(count>300?" (pokazuję 300 najlepszych)":"")+" · "+scopeLabel()+(skipped?" · pominięte zablokowane zakładki: "+skipped:"")+(!quoted&&terms.length>1?" · dokładna fraza: wpisz ją w cudzysłowie":"");
+  if(!hits.length){box.innerHTML=`<div class="empty">Nic nie znaleziono.${settings.scope!=="all"?"<br>Spróbuj szerszego zakresu (np. „Wszystko”).":""}</div>`;return;}
+  box.innerHTML="";
+  shown.forEach(h=>{
+    const d=document.createElement("div");d.className="hit";
+    d.innerHTML=`<div class="ht">${hl(h.p.title||"(bez tytułu)",terms)}</div><div class="hp"><span class="dot" style="background:${h.sec.color}"></span>${esc(h.nb.name)} › ${esc(h.sec.name)}</div><div class="hs">${snippet(bodyText(h.p),terms)}</div>`;
+    d.onclick=()=>{
+      ui.nb=h.nb.id;ui.sec=h.sec.id;ui.page=h.p.id;closeResults();$("#q").blur();
+      render();setView("editor");save();setTimeout(()=>markEditor(terms),30);
+    };
+    box.append(d);
+  });
+}
+function markEditor(terms){
+  const body=$("#body"),w=document.createTreeWalker(body,NodeFilter.SHOW_TEXT),nodes=[];let full="",n;
+  while((n=w.nextNode())){nodes.push([n,full.length]);full+=n.nodeValue;}
+  if(!nodes.length)return;
+  const nf=norm(full,settings.loose);
+  const loc=pos=>{for(let k=nodes.length-1;k>=0;k--)if(nodes[k][1]<=pos)return [nodes[k][0],Math.min(pos-nodes[k][1],nodes[k][0].nodeValue.length)];return [nodes[0][0],0];};
+  const ranges=[];
+  for(const t of terms){let i=nf.indexOf(t);while(i>-1&&ranges.length<500){const r=document.createRange();const a=loc(i),b=loc(i+t.length);r.setStart(a[0],a[1]);r.setEnd(b[0],b[1]);ranges.push(r);i=nf.indexOf(t,i+t.length);}}
+  if(!ranges.length)return;
+  ranges.sort((x,y)=>x.compareBoundaryPoints(Range.START_TO_START,y));
+  if(window.CSS&&CSS.highlights&&window.Highlight)CSS.highlights.set("hit",new Highlight(...ranges));
+  else{const s=getSelection();s.removeAllRanges();s.addRange(ranges[0]);}
+  const el=ranges[0].startContainer.parentElement;if(el)el.scrollIntoView({block:"center"});
+}
+let qT=null;
+function openResults(){$("#results").classList.remove("hidden");renderResults();}
+function closeResults(){$("#results").classList.add("hidden");}
+
+/* ---------- zdarzenia ---------- */
+$("#q").addEventListener("focus",openResults);
+$("#q").addEventListener("input",()=>{clearTimeout(qT);qT=setTimeout(()=>{openResults();},180);});
+$("#resClose").onclick=closeResults;
+document.querySelectorAll("#scopes button").forEach(b=>b.onclick=()=>{settings.scope=b.dataset.s;saveSettings();renderResults();});
+$("#loose").onchange=e=>{settings.loose=e.target.checked;saveSettings();renderResults();};
+document.addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="f"){e.preventDefault();$("#q").focus();$("#q").select();}
+  else if(e.key==="Escape"){if(!$("#modal").classList.contains("hidden"))closeModal();else closeResults();}
+});
+$("#nbSel").onchange=e=>{const v=e.target.value;if(v==="__new"){newNb();return;}ui.nb=v;ui.sec=null;ui.page=null;render();save();};
+$("#nbMore").onclick=nbMenu;
+$("#appMore").onclick=appMenu;
+$("#addSec").onclick=async()=>{
+  const r=await form("Nowa zakładka",[{k:"n",label:"Nazwa zakładki"}]);if(!r||!r.n.trim())return;
+  const nb=curNb(),sec={id:uid(),name:r.n.trim(),color:COLORS[nb.sections.length%COLORS.length],enc:null,pages:[]};
+  nb.sections.push(sec);dirtySecs.add(sec.id);ui.sec=sec.id;ui.page=null;save();render();setView("pages");
+};
+$("#addPage").onclick=()=>{
+  const sec=curSec(),ps=pagesOf(sec);if(!ps)return;
+  const p={id:uid(),title:"",html:"",updated:Date.now()};ps.push(p);ui.page=p.id;touch(sec);
+  renderPages();renderEditor();setView("editor");$("#title").focus();
+};
+$("#lockBtn").onclick=()=>{const s=curSec();if(s)lockSec(s);};
+$("#pageMore").onclick=pageMenu;
+document.querySelectorAll(".back").forEach(b=>b.onclick=()=>setView(b.dataset.back));
+$("#title").addEventListener("input",()=>{const p=curPage();if(!p)return;p.title=$("#title").value;p.updated=Date.now();touch(curSec());renderPages();});
+$("#title").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("#body").focus();}});
+$("#body").addEventListener("input",()=>{
+  const p=curPage();if(!p)return;
+  if(window.CSS&&CSS.highlights)CSS.highlights.delete("hit");
+  p.html=$("#body").innerHTML;p.updated=Date.now();touch(curSec());
+});
+$("#body").addEventListener("click",()=>{if(window.CSS&&CSS.highlights)CSS.highlights.delete("hit");});
+$("#body").addEventListener("paste",e=>{
+  e.preventDefault();
+  const t=(e.clipboardData||window.clipboardData).getData("text/plain");
+  document.execCommand("insertText",false,t);
+});
+document.querySelectorAll("[data-cmd]").forEach(b=>{
+  b.addEventListener("mousedown",e=>e.preventDefault());
+  b.onclick=()=>{
+    const c=b.dataset.cmd;
+    if(c==="h2"){const cur=(document.queryCommandValue("formatBlock")||"").toLowerCase();document.execCommand("formatBlock",false,cur==="h2"?"p":"h2");}
+    else document.execCommand(c,false,null);
+    $("#body").dispatchEvent(new Event("input"));
+  };
+});
+try{document.execCommand("defaultParagraphSeparator",false,"p");}catch(e){}
+
+/* ---------- start ---------- */
+applyTheme();setStatus("Wczytywanie…");
+load().then(()=>{render();warmCache();setView(curPage()?"editor":"sections");setStatus("");
+  if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+}).catch(e=>{alert("Błąd wczytywania notatek: "+e.message);});
+</script>
+</body>
+</html>
