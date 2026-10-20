@@ -56,14 +56,16 @@ main{flex:1;display:flex;min-height:0;position:relative}
 .back{display:none}
 body.focus #secPane,body.focus #pagePane{display:none}
 body.focus #results{left:0;border-left:0}
-body.focus #body{margin:0 auto}
-body.focus #title,body.focus #meta{max-width:920px;margin-left:auto;margin-right:auto}
+body.focus #body{max-width:none;padding-left:32px;padding-right:32px}
+body.focus #title{padding-left:32px;padding-right:32px}
+body.focus #meta{padding-left:32px;padding-right:32px}
 #focusBtn.on{background:var(--accent-soft)}
 .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--panel);min-height:51px}
 .sp{flex:1}
 .sep{width:1px;align-self:stretch;margin:6px 4px;background:var(--line)}
 .toolbar svg{display:block;margin:auto}
 .toolbar button.on{background:var(--accent-soft)}
+.toolbar button:disabled{opacity:.35;cursor:default;background:transparent}
 #status{font-size:12px;color:var(--muted);padding:0 6px}
 .scroll{flex:1;overflow:auto}
 #title{display:block;width:100%;font-size:22px;font-weight:700;border:0;background:transparent;padding:16px 20px 2px;border-radius:0}
@@ -152,6 +154,9 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
     <div class="toolbar">
       <button class="back" data-back="pages" title="Wstecz">‹</button>
       <button id="focusBtn" title="Pełny widok strony (Ctrl+\)">⤢</button>
+      <button id="undoBtn" title="Cofnij (Ctrl+Z)">↶</button>
+      <button id="redoBtn" title="Ponów (Ctrl+Y)">↷</button>
+      <span class="sep"></span>
       <button data-cmd="bold" title="Pogrubienie (Ctrl+B)"><b>B</b></button>
       <button data-cmd="italic" title="Kursywa (Ctrl+I)"><i>I</i></button>
       <button data-cmd="underline" title="Podkreślenie (Ctrl+U)"><u>U</u></button>
@@ -457,6 +462,7 @@ function renderEditor(){
   if(!p)return;
   $("#title").value=p.title||"";
   $("#body").innerHTML=p.html||"";
+  if(typeof histReset==="function")histReset(p);
   $("#meta").textContent="Zmieniono: "+new Date(p.updated).toLocaleString("pl-PL");
   $("#doc").scrollTop=0;
 }
@@ -713,6 +719,49 @@ $("#body").addEventListener("input",()=>{
   const p=curPage();if(!p)return;
   if(window.CSS&&CSS.highlights)CSS.highlights.delete("hit");
   p.html=$("#body").innerHTML;p.updated=Date.now();touch(curSec());
+  histPush(false);
+});
+/* --- cofanie i ponawianie zmian (osobna historia dla każdej otwartej strony) --- */
+const hist={id:null,stack:[],idx:-1,t:null};
+function histReset(p){clearTimeout(hist.t);hist.t=null;hist.id=p?p.id:null;hist.stack=[p?p.html||"":""];hist.idx=0;histBtns();}
+function histCommit(){
+  clearTimeout(hist.t);hist.t=null;
+  const h=$("#body").innerHTML;
+  if(hist.stack[hist.idx]===h)return;
+  hist.stack=hist.stack.slice(0,hist.idx+1);hist.stack.push(h);
+  if(hist.stack.length>300)hist.stack.shift();
+  hist.idx=hist.stack.length-1;histBtns();
+}
+function histPush(now){if(now){histCommit();return;}clearTimeout(hist.t);hist.t=setTimeout(histCommit,700);histBtns(true);}
+function histApply(){
+  const p=curPage();if(!p||p.id!==hist.id)return;
+  $("#body").innerHTML=hist.stack[hist.idx];
+  p.html=hist.stack[hist.idx];p.updated=Date.now();touch(curSec());histBtns();
+}
+function undo(){if(hist.t)histCommit();if(hist.idx>0){hist.idx--;histApply();}}
+function redo(){if(hist.t)histCommit();if(hist.idx<hist.stack.length-1){hist.idx++;histApply();}}
+function histBtns(pending){
+  const u=$("#undoBtn"),r=$("#redoBtn");if(!u)return;
+  u.disabled=!(pending||hist.idx>0);r.disabled=pending||hist.idx>=hist.stack.length-1;
+}
+["undoBtn","redoBtn"].forEach(id=>{const b=document.getElementById(id);b.addEventListener("mousedown",e=>e.preventDefault());b.addEventListener("pointerdown",e=>e.preventDefault());});
+$("#undoBtn").onclick=undo;$("#redoBtn").onclick=redo;
+/* --- stopniowe zaznaczanie: Ctrl+A raz = akapit, drugi raz = cała strona; Ctrl+Z / Ctrl+Y --- */
+$("#body").addEventListener("keydown",e=>{
+  const k=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
+  if(!mod)return;
+  if(k==="z"&&!e.shiftKey){e.preventDefault();undo();return;}
+  if(k==="y"||(k==="z"&&e.shiftKey)){e.preventDefault();redo();return;}
+  if(k==="a"){
+    const sel=getSelection();if(!sel.rangeCount)return;
+    const r=sel.getRangeAt(0),b=blockOf(r.startContainer);
+    if(!b)return;                                   // brak akapitu – zaznacz wszystko (domyślnie)
+    const br=document.createRange();br.selectNodeContents(b);
+    const same=r.compareBoundaryPoints(Range.START_TO_START,br)===0&&r.compareBoundaryPoints(Range.END_TO_END,br)===0;
+    const inside=r.compareBoundaryPoints(Range.START_TO_START,br)>=0&&r.compareBoundaryPoints(Range.END_TO_END,br)<=0;
+    if(inside&&!same){e.preventDefault();sel.removeAllRanges();sel.addRange(br);}
+    else{e.preventDefault();const all=document.createRange();all.selectNodeContents($("#body"));sel.removeAllRanges();sel.addRange(all);}
+  }
 });
 $("#body").addEventListener("click",()=>{if(window.CSS&&CSS.highlights)CSS.highlights.delete("hit");});
 /* --- zapamiętanie zaznaczenia (telefon gubi je przy dotknięciu przycisku) --- */
@@ -773,11 +822,12 @@ document.querySelectorAll("[data-cmd]").forEach(b=>{
   b.addEventListener("pointerdown",e=>e.preventDefault());
   b.onclick=()=>{
     const c=b.dataset.cmd;
-    if(ALIGN[c]){if(applyAlign(c)){$("#body").dispatchEvent(new Event("input"));updateAlignBtns();}return;}
+    if(ALIGN[c]){if(hist.t)histCommit();if(applyAlign(c)){$("#body").dispatchEvent(new Event("input"));histCommit();updateAlignBtns();}return;}
+    if(hist.t)histCommit();
     restoreSel();
     if(c==="h2"){const cur=(document.queryCommandValue("formatBlock")||"").toLowerCase();document.execCommand("formatBlock",false,cur==="h2"?"p":"h2");}
     else document.execCommand(c,false,null);
-    $("#body").dispatchEvent(new Event("input"));
+    $("#body").dispatchEvent(new Event("input"));histCommit();
     if(typeof updateAlignBtns==="function")updateAlignBtns();
   };
 });
