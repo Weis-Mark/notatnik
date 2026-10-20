@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <title>Notatki</title>
 <meta name="theme-color" content="#1b1b21">
 <style>
@@ -65,6 +65,10 @@ body.focus #meta{padding-left:32px;padding-right:32px}
 .sep{width:1px;align-self:stretch;margin:6px 4px;background:var(--line)}
 .toolbar svg{display:block;margin:auto}
 .toolbar button.on{background:var(--accent-soft)}
+#floatbar{position:fixed;z-index:40;display:flex;align-items:center;gap:1px;padding:3px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+#floatbar button{min-width:30px;min-height:30px;padding:3px 6px}
+#floatbar svg{display:block;margin:auto}
+#floatbar .sep{width:1px;align-self:stretch;margin:4px 3px;background:var(--line)}
 .toolbar button:disabled{opacity:.35;cursor:default;background:transparent}
 #status{font-size:12px;color:var(--muted);padding:0 6px}
 .scroll{flex:1;overflow:auto}
@@ -122,6 +126,10 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
   body[data-view="editor"] #secPane,body[data-view="editor"] #pagePane{display:none}
   .back{display:inline-block}
   #focusBtn{display:none}
+  .toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .toolbar::-webkit-scrollbar{display:none}
+  .toolbar button{flex:none}
+  #status{display:none}
   #results{left:0;border-left:0}
   #title{padding:12px 14px 2px}
   #meta{padding:0 14px}
@@ -164,6 +172,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
       <button data-cmd="h2" title="Nagłówek">H</button>
       <button data-cmd="insertUnorderedList" title="Lista punktowana">•</button>
       <button data-cmd="insertOrderedList" title="Lista numerowana">1.</button>
+      <button data-cmd="selectStep" title="Zaznacz: raz akapit, drugi raz całą stronę (Ctrl+A)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/></svg></button>
       <span class="sep"></span>
       <button data-cmd="justifyLeft" title="Wyrównaj do lewej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="10" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="10" y2="12.9"/></svg></button>
       <button data-cmd="justifyCenter" title="Wyśrodkuj"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="4" y1="6.3" x2="12" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="4" y1="12.9" x2="12" y2="12.9"/></svg></button>
@@ -193,6 +202,9 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
     <div id="resList" class="list"></div>
   </div>
 </main>
+<div id="floatbar" class="hidden">
+  <button data-cmd="bold" title="Pogrubienie"><b>B</b></button><button data-cmd="italic" title="Kursywa"><i>I</i></button><button data-cmd="underline" title="Podkreślenie"><u>U</u></button><button data-cmd="strikeThrough" title="Przekreślenie"><s>S</s></button><button data-cmd="h2" title="Nagłówek">H</button><button data-cmd="insertUnorderedList" title="Lista">•</button><span class="sep"></span><button data-cmd="justifyLeft" title="Do lewej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="10" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="10" y2="12.9"/></svg></button><button data-cmd="justifyCenter" title="Do środka"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="4" y1="6.3" x2="12" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="4" y1="12.9" x2="12" y2="12.9"/></svg></button><button data-cmd="justifyRight" title="Do prawej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="6" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="6" y1="12.9" x2="14" y2="12.9"/></svg></button><button data-cmd="justifyFull" title="Wyjustuj"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="14" y2="12.9"/></svg></button><span class="sep"></span><button data-cmd="removeFormat" title="Usuń formatowanie">⌫</button>
+</div>
 <div id="modal" class="modal hidden"></div>
 <input type="file" id="file" accept=".json,application/json" class="hidden">
 <script>
@@ -752,18 +764,21 @@ $("#body").addEventListener("keydown",e=>{
   if(!mod)return;
   if(k==="z"&&!e.shiftKey){e.preventDefault();undo();return;}
   if(k==="y"||(k==="z"&&e.shiftKey)){e.preventDefault();redo();return;}
-  if(k==="a"){
-    const sel=getSelection();if(!sel.rangeCount)return;
-    const r=sel.getRangeAt(0),b=blockOf(r.startContainer);
-    if(!b)return;                                   // brak akapitu – zaznacz wszystko (domyślnie)
+  if(k==="a"){e.preventDefault();selectStep();}
+});
+function selectStep(){
+  const sel=getSelection(),body=$("#body");
+  const r=restoreSel()||(()=>{const x=document.createRange();x.selectNodeContents(body);x.collapse(true);return x;})();
+  const b=blockOf(r.startContainer);
+  const all=document.createRange();all.selectNodeContents(body);
+  if(b){
     const br=document.createRange();br.selectNodeContents(b);
     const same=r.compareBoundaryPoints(Range.START_TO_START,br)===0&&r.compareBoundaryPoints(Range.END_TO_END,br)===0;
     const inside=r.compareBoundaryPoints(Range.START_TO_START,br)>=0&&r.compareBoundaryPoints(Range.END_TO_END,br)<=0;
-    if(inside&&!same){e.preventDefault();sel.removeAllRanges();sel.addRange(br);}
-    else{e.preventDefault();const all=document.createRange();all.selectNodeContents($("#body"));sel.removeAllRanges();sel.addRange(all);}
+    if(inside&&!same){sel.removeAllRanges();sel.addRange(br);lastRange=br.cloneRange();return;}
   }
-});
-$("#body").addEventListener("click",()=>{if(window.CSS&&CSS.highlights)CSS.highlights.delete("hit");});
+  sel.removeAllRanges();sel.addRange(all);lastRange=all.cloneRange();
+}
 /* --- zapamiętanie zaznaczenia (telefon gubi je przy dotknięciu przycisku) --- */
 let lastRange=null;
 const BLOCKS="p,li,h1,h2,h3,h4,div,td,blockquote";
@@ -805,7 +820,7 @@ function updateAlignBtns(){
   const b=blockOf(sel.anchorNode);
   let cur="left";
   if(b){const t=getComputedStyle(b).textAlign;cur=t==="center"?"center":t==="right"||t==="end"?"right":t==="justify"?"justify":"left";}
-  Object.entries(ALIGN).forEach(([c,v])=>{const x=document.querySelector('[data-cmd="'+c+'"]');if(x)x.classList.toggle("on",v===cur);});
+  Object.entries(ALIGN).forEach(([c,v])=>{document.querySelectorAll('[data-cmd="'+c+'"]').forEach(x=>x.classList.toggle("on",v===cur));});
 }
 document.addEventListener("selectionchange",()=>{
   const sel=getSelection();
@@ -822,6 +837,7 @@ document.querySelectorAll("[data-cmd]").forEach(b=>{
   b.addEventListener("pointerdown",e=>e.preventDefault());
   b.onclick=()=>{
     const c=b.dataset.cmd;
+    if(c==="selectStep"){selectStep();return;}
     if(ALIGN[c]){if(hist.t)histCommit();if(applyAlign(c)){$("#body").dispatchEvent(new Event("input"));histCommit();updateAlignBtns();}return;}
     if(hist.t)histCommit();
     restoreSel();
@@ -832,6 +848,33 @@ document.querySelectorAll("[data-cmd]").forEach(b=>{
   };
 });
 try{document.execCommand("defaultParagraphSeparator",false,"p");}catch(e){}
+
+/* --- pływający pasek formatowania przy zaznaczeniu (komputer) --- */
+const fineMouse=window.matchMedia("(hover:hover) and (pointer:fine)").matches;
+let fbT=null,mouseDownInBody=false;
+function hideFloat(){$("#floatbar").classList.add("hidden");}
+function placeFloat(){
+  const fb=$("#floatbar"),sel=getSelection();
+  if(!fineMouse||mouseDownInBody||!sel.rangeCount||sel.isCollapsed||!$("#body").contains(sel.anchorNode)){hideFloat();return;}
+  const r=sel.getRangeAt(0),rects=r.getClientRects(),rc=rects.length?rects[0]:r.getBoundingClientRect();
+  if(!rc||(!rc.width&&!rc.height)){hideFloat();return;}
+  fb.classList.remove("hidden");
+  const w=fb.offsetWidth,h=fb.offsetHeight;
+  let x=Math.max(8,Math.min(window.innerWidth-w-8,rc.left));
+  let y=rc.top-h-8;if(y<60)y=Math.min(window.innerHeight-h-8,(rects.length?rects[rects.length-1].bottom:rc.bottom)+8);
+  fb.style.left=x+"px";fb.style.top=y+"px";
+}
+document.addEventListener("selectionchange",()=>{clearTimeout(fbT);fbT=setTimeout(placeFloat,180);});
+$("#body").addEventListener("mousedown",()=>{mouseDownInBody=true;hideFloat();});
+document.addEventListener("mouseup",()=>{if(mouseDownInBody){mouseDownInBody=false;clearTimeout(fbT);fbT=setTimeout(placeFloat,60);}});
+$("#doc").addEventListener("scroll",hideFloat);
+document.addEventListener("keydown",e=>{if(e.key==="Escape")hideFloat();});
+/* --- telefon: pasek nie może uciekać za górną krawędź przy przewijaniu / klawiaturze --- */
+if(window.visualViewport){
+  const vv=window.visualViewport;
+  const fit=()=>{document.body.style.height=vv.height+"px";if(window.scrollY||document.documentElement.scrollTop)window.scrollTo(0,0);};
+  vv.addEventListener("resize",fit);vv.addEventListener("scroll",fit);window.addEventListener("scroll",fit);fit();
+}
 
 /* ---------- start ---------- */
 applyTheme();applyFocus();setStatus("Wczytywanie…");
