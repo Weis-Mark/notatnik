@@ -61,6 +61,9 @@ body.focus #title,body.focus #meta{max-width:920px;margin-left:auto;margin-right
 #focusBtn.on{background:var(--accent-soft)}
 .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--panel);min-height:51px}
 .sp{flex:1}
+.sep{width:1px;align-self:stretch;margin:6px 4px;background:var(--line)}
+.toolbar svg{display:block;margin:auto}
+.toolbar button.on{background:var(--accent-soft)}
 #status{font-size:12px;color:var(--muted);padding:0 6px}
 .scroll{flex:1;overflow:auto}
 #title{display:block;width:100%;font-size:22px;font-weight:700;border:0;background:transparent;padding:16px 20px 2px;border-radius:0}
@@ -156,6 +159,12 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
       <button data-cmd="h2" title="Nagłówek">H</button>
       <button data-cmd="insertUnorderedList" title="Lista punktowana">•</button>
       <button data-cmd="insertOrderedList" title="Lista numerowana">1.</button>
+      <span class="sep"></span>
+      <button data-cmd="justifyLeft" title="Wyrównaj do lewej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="10" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="10" y2="12.9"/></svg></button>
+      <button data-cmd="justifyCenter" title="Wyśrodkuj"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="4" y1="6.3" x2="12" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="4" y1="12.9" x2="12" y2="12.9"/></svg></button>
+      <button data-cmd="justifyRight" title="Wyrównaj do prawej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="6" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="6" y1="12.9" x2="14" y2="12.9"/></svg></button>
+      <button data-cmd="justifyFull" title="Wyjustuj (do obu krawędzi)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="14" y2="12.9"/></svg></button>
+      <span class="sep"></span>
       <button data-cmd="removeFormat" title="Usuń formatowanie">⌫</button>
       <span class="sp"></span><span id="status"></span>
       <button id="pageMore" title="Strona – opcje">⋯</button>
@@ -706,6 +715,14 @@ $("#body").addEventListener("input",()=>{
   p.html=$("#body").innerHTML;p.updated=Date.now();touch(curSec());
 });
 $("#body").addEventListener("click",()=>{if(window.CSS&&CSS.highlights)CSS.highlights.delete("hit");});
+function updateAlignBtns(){
+  const sel=getSelection();if(!sel.rangeCount||!$("#body").contains(sel.anchorNode))return;
+  ["justifyLeft","justifyCenter","justifyRight","justifyFull"].forEach(c=>{
+    let on=false;try{on=document.queryCommandState(c);}catch(e){}
+    const b=document.querySelector('[data-cmd="'+c+'"]');if(b)b.classList.toggle("on",on);
+  });
+}
+document.addEventListener("selectionchange",updateAlignBtns);
 $("#body").addEventListener("paste",e=>{
   e.preventDefault();
   const t=(e.clipboardData||window.clipboardData).getData("text/plain");
@@ -718,6 +735,7 @@ document.querySelectorAll("[data-cmd]").forEach(b=>{
     if(c==="h2"){const cur=(document.queryCommandValue("formatBlock")||"").toLowerCase();document.execCommand("formatBlock",false,cur==="h2"?"p":"h2");}
     else document.execCommand(c,false,null);
     $("#body").dispatchEvent(new Event("input"));
+    if(typeof updateAlignBtns==="function")updateAlignBtns();
   };
 });
 try{document.execCommand("defaultParagraphSeparator",false,"p");}catch(e){}
