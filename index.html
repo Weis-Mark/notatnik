@@ -3,7 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
-<title>Notatki</title>
+<title>Notatnik</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Notatnik">
 <meta name="theme-color" content="#1b1b21">
 <style>
 :root{
@@ -22,6 +28,9 @@
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+main{padding-bottom:env(safe-area-inset-bottom)}
 body{background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;overflow:hidden}
 button{font:inherit;color:inherit;background:transparent;border:1px solid transparent;border-radius:8px;padding:5px 9px;cursor:pointer;min-width:34px;min-height:34px}
 button:hover{background:var(--panel2)}
@@ -29,7 +38,7 @@ input,select{font:inherit;color:var(--text);background:var(--panel2);border:1px 
 input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .hidden{display:none!important}
 .muted{color:var(--muted)}
-header{display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+header{display:flex;gap:8px;align-items:center;padding:calc(8px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left));background:var(--panel);border-bottom:1px solid var(--line)}
 .brand{font-weight:700;white-space:nowrap}
 .search{flex:1;display:flex;min-width:0}
 .search input{flex:1}
@@ -139,7 +148,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
 </head>
 <body data-view="sections">
 <header>
-  <span class="brand">📝 Notatki</span>
+  <span class="brand">📝 Notatnik</span>
   <div class="search"><input id="q" type="search" placeholder="Szukaj…  (Ctrl+F)" autocomplete="off"></div>
   <button id="appMore" title="Ustawienia">⚙</button>
 </header>
@@ -228,7 +237,9 @@ function applyFocus(){
 }
 function toggleFocus(v){settings.focus=v===undefined?!settings.focus:v;saveSettings();applyFocus();}
 function saveSettings(){try{localStorage.setItem(SKEY,JSON.stringify(settings))}catch(e){}}
-function applyTheme(){const r=document.documentElement;if(settings.theme==="auto")delete r.dataset.theme;else r.dataset.theme=settings.theme;}
+function applyTheme(){const r=document.documentElement;if(settings.theme==="auto")delete r.dataset.theme;else r.dataset.theme=settings.theme;
+  const dark=settings.theme==="dark"||(settings.theme==="auto"&&matchMedia("(prefers-color-scheme: dark)").matches);
+  const m=document.querySelector('meta[name="theme-color"]');if(m)m.content=dark?"#1b1b21":"#ffffff";}
 
 /* ---------- dane ---------- */
 let state=null;
@@ -874,6 +885,11 @@ if(window.visualViewport){
   const vv=window.visualViewport;
   const fit=()=>{document.body.style.height=vv.height+"px";if(window.scrollY||document.documentElement.scrollTop)window.scrollTo(0,0);};
   vv.addEventListener("resize",fit);vv.addEventListener("scroll",fit);window.addEventListener("scroll",fit);fit();
+}
+
+/* --- aplikacja instalowalna (działa też offline) --- */
+if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost")){
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
 }
 
 /* ---------- start ---------- */
