@@ -1,0 +1,50 @@
+#!/bin/bash
+# Konfiguracja serwera domowego - krok 1
+# Zapora sieciowa (tylko siec domowa), pelne wykorzystanie dysku, porzadki.
+# Uruchomienie na serwerze:  sudo bash s1
+export LC_ALL=C
+set -u
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s1"; exit 1; fi
+
+echo
+echo "=== 1/4 Zapora sieciowa: wpuszczam tylko komputery z sieci domowej ==="
+LAN=$(ip -4 route show proto kernel scope link | awk '$1 ~ /^(10|172|192\.168)\./ {print $1; exit}')
+[ -z "$LAN" ] && LAN="192.168.10.0/24"
+echo "Siec domowa: $LAN"
+command -v ufw >/dev/null || apt-get install -y ufw
+ufw --force reset >/dev/null
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow from "$LAN" to any port 22 proto tcp comment 'SSH tylko z sieci domowej'
+ufw --force enable
+
+echo
+echo "=== 2/4 Dysk: dolaczam cale wolne miejsce ==="
+ROOTDEV=$(findmnt -n -o SOURCE /)
+VG=$(lvs --noheadings -o vg_name "$ROOTDEV" 2>/dev/null | tr -d ' ')
+if [ -n "$VG" ]; then
+  FREE=$(vgs --noheadings --units g --nosuffix -o vg_free "$VG" | tr -d ' ')
+  if awk -v f="$FREE" 'BEGIN{exit !(f>1)}'; then
+    lvextend -r -l +100%FREE "$ROOTDEV"
+  else
+    echo "Dysk jest juz w pelni wykorzystany."
+  fi
+else
+  echo "Brak LVM - pomijam."
+fi
+
+echo
+echo "=== 3/4 Porzadki ==="
+sed -i 's/nomodeset nomodeset/nomodeset/' /etc/default/grub
+update-grub >/dev/null 2>&1 && echo "Ustawienia startu: OK"
+sed -i 's/^XKBLAYOUT=.*/XKBLAYOUT="no"/' /etc/default/keyboard
+setupcon -k --force >/dev/null 2>&1 || true
+echo "Klawiatura: norweska"
+
+echo
+echo "=== 4/4 Podsumowanie ==="
+ufw status verbose
+echo
+df -h / | awk 'NR==1 || NR==2'
+echo
+echo "GOTOWE"
