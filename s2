@@ -1,0 +1,119 @@
+#!/bin/bash
+# Konfiguracja serwera domowego - krok 2
+# Folder firmowy w sieci domowej (dysk na komputerach z Windows)
+# + automatyczne "zdjecia" plikow co godzine (Poprzednie wersje w Windows).
+# Uruchomienie na serwerze:  sudo bash s2
+export LC_ALL=C
+set -u
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s2"; exit 1; fi
+ADMIN="${SUDO_USER:-weiser}"
+SHARE=/srv/firma
+SNAP=/srv/firma-kopie
+
+echo
+echo "=== 1/5 Instaluje potrzebne programy (kilka minut) ==="
+apt-get update -q >/dev/null
+DEBIAN_FRONTEND=noninteractive apt-get install -y -q samba rsync >/dev/null && echo "OK"
+
+echo
+echo "=== 2/5 Folder firmowy ==="
+groupadd -f firma
+usermod -aG firma "$ADMIN"
+mkdir -p "$SHARE" "$SNAP"
+chown root:firma "$SHARE"; chmod 2770 "$SHARE"
+chown root:root "$SNAP";  chmod 0755 "$SNAP"
+echo "Folder: $SHARE"
+
+echo
+echo "=== 3/5 Udostepnienie w sieci domowej ==="
+CONF=/etc/samba/smb.conf
+if ! grep -q '^\[Firma\]' "$CONF"; then
+cat >> "$CONF" <<'EOF'
+
+[Firma]
+   comment = Folder firmowy
+   path = /srv/firma
+   valid users = @firma
+   read only = no
+   browseable = yes
+   force group = firma
+   create mask = 0660
+   force create mode = 0660
+   directory mask = 2770
+   force directory mode = 2770
+   vfs objects = shadow_copy2
+   shadow:snapdir = /srv/firma-kopie
+   shadow:basedir = /srv/firma
+   shadow:format = @GMT-%Y.%m.%d-%H.%M.%S
+   shadow:sort = desc
+   shadow:localtime = no
+EOF
+fi
+# tylko nowoczesne, bezpieczne wersje protokolu
+grep -q 'server min protocol' "$CONF" || sed -i 's/^\[global\]/[global]\n   server min protocol = SMB2_10/' "$CONF"
+testparm -s >/dev/null 2>&1 && echo "Konfiguracja: OK" || echo "UWAGA: blad konfiguracji Samba"
+LAN=$(ip -4 route show proto kernel scope link | awk '$1 ~ /^(10|172|192\.168)\./ {print $1; exit}')
+[ -z "$LAN" ] && LAN="192.168.10.0/24"
+ufw allow from "$LAN" to any port 445 proto tcp comment 'Folder firmowy (Samba)' >/dev/null
+systemctl enable --now smbd >/dev/null 2>&1
+systemctl restart smbd
+
+echo
+echo "=== 4/5 Zdjecia plikow co godzine ==="
+cat > /usr/local/sbin/firma-migawka <<'EOF'
+#!/bin/bash
+# Migawka folderu firmowego. Trzyma: wszystkie z ostatnich 48 godzin,
+# potem jedna na dzien przez 60 dni, potem jedna na tydzien przez rok.
+export LC_ALL=C
+SRC=/srv/firma/
+DST=/srv/firma-kopie
+exec 9>/run/firma-migawka.lock; flock -n 9 || exit 0
+rm -rf "$DST"/*.tmp
+NAME="@GMT-$(date -u +%Y.%m.%d-%H.%M.%S)"
+LAST=$(ls -1d "$DST"/@GMT-* 2>/dev/null | grep -v '\.tmp$' | sort | tail -1)
+LINK=(); [ -n "$LAST" ] && LINK=(--link-dest="$LAST")
+rsync -a --delete --chmod=Fa-w "${LINK[@]}" "$SRC" "$DST/$NAME.tmp" && mv "$DST/$NAME.tmp" "$DST/$NAME"
+NOW=$(date -u +%s); declare -A SEEN
+for d in $(ls -1d "$DST"/@GMT-* 2>/dev/null | grep -v '\.tmp$' | sort -r); do
+  b=$(basename "$d"); s=${b#@GMT-}
+  t=$(date -u -d "${s:0:4}-${s:5:2}-${s:8:2} ${s:11:2}:${s:14:2}:${s:17:2}" +%s 2>/dev/null) || continue
+  age=$(( (NOW - t) / 3600 ))
+  if   [ $age -lt 48 ];   then continue
+  elif [ $age -lt 1440 ]; then key="d${s:0:10}"
+  elif [ $age -lt 8760 ]; then key="w$(date -u -d @"$t" +%G-%V)"
+  else rm -rf "$d"; continue; fi
+  if [ -n "${SEEN[$key]:-}" ]; then rm -rf "$d"; else SEEN[$key]=1; fi
+done
+EOF
+chmod 755 /usr/local/sbin/firma-migawka
+echo "5 * * * * root /usr/local/sbin/firma-migawka" > /etc/cron.d/firma-migawka
+/usr/local/sbin/firma-migawka && echo "Pierwsze zdjecie zrobione. Kolejne co godzine."
+
+echo
+echo "=== 5/5 Hasla do folderu firmowego ==="
+echo "Teraz ustaw haslo do folderu dla uzytkownika: $ADMIN"
+echo "(moze byc takie samo jak do serwera; podczas pisania nic sie nie wyswietla)"
+until smbpasswd -a "$ADMIN"; do echo "Hasla sie roznily - sprobuj jeszcze raz."; done
+smbpasswd -e "$ADMIN" >/dev/null
+echo
+echo "Czy dodac osobne konto dla zony?"
+echo "Wpisz jej nazwe uzytkownika (male litery, bez polskich znakow, np. dosia)"
+echo "albo nacisnij sam Enter, aby pominac:"
+read -r WIFE
+WIFE=$(echo "$WIFE" | tr -cd 'a-z0-9')
+if [ -n "$WIFE" ]; then
+  id "$WIFE" >/dev/null 2>&1 || useradd -M -s /usr/sbin/nologin -G firma "$WIFE"
+  usermod -aG firma "$WIFE"
+  echo "Ustaw haslo do folderu dla: $WIFE"
+  until smbpasswd -a "$WIFE"; do echo "Hasla sie roznily - sprobuj jeszcze raz."; done
+  smbpasswd -e "$WIFE" >/dev/null
+fi
+
+echo
+echo "=== Podsumowanie ==="
+IP=$(hostname -I | awk '{print $1}')
+echo "Adres folderu w Windows:  \\\\$IP\\Firma"
+echo "Konta z dostepem: $(getent group firma | cut -d: -f4)"
+ufw status | grep -E '445|22/'
+echo
+echo "GOTOWE"

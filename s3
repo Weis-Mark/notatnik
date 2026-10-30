@@ -1,0 +1,67 @@
+#!/bin/bash
+# Test karty pamieci / pendrive'a: czy ma naprawde tyle miejsca, ile deklaruje.
+# UWAGA: test USUWA wszystko z karty.
+# Uruchomienie na serwerze:  sudo bash s3
+export LC_ALL=C
+set -u
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s3"; exit 1; fi
+
+echo "Instaluje program testujacy..."
+DEBIAN_FRONTEND=noninteractive apt-get install -y -q f3 exfatprogs >/dev/null 2>&1 || { apt-get update -q >/dev/null; DEBIAN_FRONTEND=noninteractive apt-get install -y -q f3 exfatprogs >/dev/null; }
+
+# dyski systemowe serwera - tych NIGDY nie ruszamy
+SYS=$(lsblk -nso NAME "$(findmnt -n -o SOURCE /)" | sed 's/^[^a-z0-9]*//' | sort -u)
+mapfile -t DEVS < <(lsblk -dn -o NAME,TRAN | awk '$2=="usb"{print $1}')
+CAND=()
+for d in "${DEVS[@]}"; do echo "$SYS" | grep -qx "$d" || CAND+=("$d"); done
+
+if [ ${#CAND[@]} -eq 0 ]; then
+  echo; echo "Nie widze karty ani pendrive'a."
+  echo "Podlacz czytnik z karta do USB serwera, odczekaj 10 sekund i uruchom ponownie:  sudo bash s3"
+  exit 1
+fi
+if [ ${#CAND[@]} -gt 1 ]; then
+  echo; echo "Podlaczonych jest kilka urzadzen USB. Zostaw tylko czytnik z karta i uruchom ponownie."
+  lsblk -d -o NAME,SIZE,MODEL,TRAN | grep -E 'NAME|usb'
+  exit 1
+fi
+DEV="/dev/${CAND[0]}"
+SIZE=$(lsblk -dn -o SIZE "$DEV")
+echo
+echo "Znalezione urzadzenie:"
+lsblk -d -o NAME,SIZE,VENDOR,MODEL "$DEV"
+echo
+echo "Deklarowana pojemnosc: $SIZE"
+echo "UWAGA: test USUNIE wszystko, co jest na tej karcie."
+echo "Wpisz  TAK  (wielkimi literami) i Enter, aby rozpoczac. Cokolwiek innego = rezygnacja."
+read -r ANS
+[ "$ANS" = "TAK" ] || { echo "Przerwano. Niczego nie zmieniono."; exit 0; }
+
+for p in $(lsblk -ln -o NAME "$DEV" | tail -n +2); do umount "/dev/$p" 2>/dev/null; done
+echo
+echo "Test trwa zwykle kilka minut. Nie wyjmuj karty..."
+f3probe --destructive --time-ops "$DEV" 2>&1 | tee /root/test-karty.txt
+echo
+if grep -q "Good news" /root/test-karty.txt; then
+  echo "=========================================================="
+  echo " WYNIK: karta jest PRAWDZIWA ($SIZE)."
+  echo "=========================================================="
+  echo "Formatuje ja na nowo (exFAT, czyta ja Windows i telefon)..."
+  wipefs -a "$DEV" >/dev/null
+  echo 'type=7' | sfdisk -q "$DEV" >/dev/null
+  sleep 2; PART=$(lsblk -ln -o NAME "$DEV" | sed -n 2p)
+  mkfs.exfat -L KARTA "/dev/$PART" >/dev/null && echo "Gotowe - karte mozna wyjac i uzywac."
+elif grep -q "Bad news" /root/test-karty.txt; then
+  REAL=$(grep -i "Usable size" /root/test-karty.txt | head -1)
+  echo "=========================================================="
+  echo " WYNIK: karta jest PODROBIONA."
+  echo " Deklaruje $SIZE, a naprawde miesci tylko:"
+  echo " $REAL"
+  echo " Pliki zapisane ponad ta pojemnosc ulegaja zniszczeniu."
+  echo " Nie trzymaj na niej niczego waznego."
+  echo "=========================================================="
+else
+  echo "Test nie dal jednoznacznego wyniku - przyslij zdjecie ekranu."
+fi
+echo
+echo "Wynik zapisany tez w pliku /root/test-karty.txt"
