@@ -1,0 +1,125 @@
+#!/bin/bash
+# Konfiguracja serwera domowego - krok 4
+# Zaszyfrowany "sejf" na folder firmowy i jego zdjecia (kopie godzinowe).
+# Uruchomienie na serwerze:  sudo bash s4
+export LC_ALL=C
+set -u
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s4"; exit 1; fi
+IMG=/srv/sejf.img
+MNT=/srv/sejf
+SIZE=200G
+if [ -e "$IMG" ]; then echo "Sejf juz istnieje ($IMG). Niczego nie zmieniam."; exit 0; fi
+
+echo
+echo "UWAGA: usune z serwera obecna, NIEzaszyfrowana kopie folderu firmowego"
+echo "i jej zdjecia. Oryginal na Twoim komputerze zostaje bez zmian."
+echo "Potem skopiujesz baze klientow na dysk S: jeszcze raz - juz do sejfu."
+echo "Wpisz  TAK  (wielkimi literami) i Enter, aby kontynuowac:"
+read -r ANS
+[ "$ANS" = "TAK" ] || { echo "Przerwano. Niczego nie zmieniono."; exit 0; }
+
+echo
+echo "=== 1/5 Usuwam niezaszyfrowana kopie ==="
+command -v cryptsetup >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q cryptsetup >/dev/null
+systemctl stop smbd
+rm -f /etc/cron.d/firma-migawka
+rm -rf /srv/firma /srv/firma-kopie
+fstrim -v / >/dev/null 2>&1
+echo "Usunieto."
+
+echo
+echo "=== 2/5 Tworze sejf ($SIZE) ==="
+fallocate -l "$SIZE" "$IMG" && chmod 600 "$IMG"
+echo
+echo "Teraz wymysl HASLO DO SEJFU:"
+echo " - tylko litery i cyfry z gornego rzedu, najlepiej 20 znakow lub wiecej"
+echo " - ZAPISZ JE W mSecure. Zapomniane haslo = dane nie do odzyskania!"
+echo " - podczas pisania nic sie nie wyswietla; trzeba je wpisac dwa razy"
+echo
+until cryptsetup luksFormat -q --type luks2 --verify-passphrase "$IMG"; do
+  echo "Hasla sie roznily - sprobuj jeszcze raz."
+done
+echo
+echo "Teraz otworz sejf tym samym haslem:"
+until cryptsetup open "$IMG" sejf; do echo "Zle haslo - sprobuj jeszcze raz."; done
+mkfs.ext4 -q -L sejf /dev/mapper/sejf
+
+echo
+echo "=== 3/5 Przenosze folder firmowy do sejfu ==="
+mkdir -p "$MNT"; chmod 000 "$MNT"
+mount /dev/mapper/sejf "$MNT"
+chmod 755 "$MNT"
+mkdir -p "$MNT/firma" "$MNT/kopie"
+chown root:firma "$MNT/firma"; chmod 2770 "$MNT/firma"
+chown root:root  "$MNT/kopie"; chmod 0755 "$MNT/kopie"
+CONF=/etc/samba/smb.conf
+sed -i -e 's#^\( *path = \)/srv/firma$#\1/srv/sejf/firma#' \
+       -e 's#^\( *shadow:snapdir = \)/srv/firma-kopie$#\1/srv/sejf/kopie#' \
+       -e 's#^\( *shadow:basedir = \)/srv/firma$#\1/srv/sejf/firma#' "$CONF"
+grep -q '/srv/sejf/firma' "$CONF" && echo "Udostepnienie: przestawione na sejf" || echo "UWAGA: nie udalo sie przestawic udostepnienia"
+
+echo
+echo "=== 4/5 Zdjecia plikow i polecenie do otwierania sejfu ==="
+cat > /usr/local/sbin/firma-migawka <<'EOF'
+#!/bin/bash
+# Migawka folderu firmowego (tylko gdy sejf jest otwarty). Trzyma: wszystkie
+# z ostatnich 48 godzin, potem jedna na dzien przez 60 dni, potem jedna na
+# tydzien przez rok.
+export LC_ALL=C
+mountpoint -q /srv/sejf || exit 0
+SRC=/srv/sejf/firma/
+DST=/srv/sejf/kopie
+exec 9>/run/firma-migawka.lock; flock -n 9 || exit 0
+rm -rf "$DST"/*.tmp
+NAME="@GMT-$(date -u +%Y.%m.%d-%H.%M.%S)"
+LAST=$(ls -1d "$DST"/@GMT-* 2>/dev/null | grep -v '\.tmp$' | sort | tail -1)
+LINK=(); [ -n "$LAST" ] && LINK=(--link-dest="$LAST")
+rsync -a --delete --chmod=Fa-w "${LINK[@]}" "$SRC" "$DST/$NAME.tmp" && mv "$DST/$NAME.tmp" "$DST/$NAME"
+NOW=$(date -u +%s); declare -A SEEN
+for d in $(ls -1d "$DST"/@GMT-* 2>/dev/null | grep -v '\.tmp$' | sort -r); do
+  b=$(basename "$d"); s=${b#@GMT-}
+  t=$(date -u -d "${s:0:4}-${s:5:2}-${s:8:2} ${s:11:2}:${s:14:2}:${s:17:2}" +%s 2>/dev/null) || continue
+  age=$(( (NOW - t) / 3600 ))
+  if   [ $age -lt 48 ];   then continue
+  elif [ $age -lt 1440 ]; then key="d${s:0:10}"
+  elif [ $age -lt 8760 ]; then key="w$(date -u -d @"$t" +%G-%V)"
+  else rm -rf "$d"; continue; fi
+  if [ -n "${SEEN[$key]:-}" ]; then rm -rf "$d"; else SEEN[$key]=1; fi
+done
+EOF
+chmod 755 /usr/local/sbin/firma-migawka
+echo "5 * * * * root /usr/local/sbin/firma-migawka" > /etc/cron.d/firma-migawka
+
+cat > /usr/local/sbin/sejf <<'EOF'
+#!/bin/bash
+# Otwiera sejf z folderem firmowym (potrzebne po kazdym wlaczeniu serwera).
+if [ "$(id -u)" -ne 0 ]; then echo "Uzyj:  sudo sejf"; exit 1; fi
+if mountpoint -q /srv/sejf; then echo "Sejf jest juz otwarty - dysk S: dziala."; exit 0; fi
+echo "Haslo do SEJFU (nie do serwera):"
+until cryptsetup open /srv/sejf.img sejf; do echo "Zle haslo - sprobuj jeszcze raz (Ctrl+C = przerwij)."; done
+mount /dev/mapper/sejf /srv/sejf && systemctl restart smbd && echo "Sejf otwarty - dysk S: dziala."
+EOF
+chmod 755 /usr/local/sbin/sejf
+
+cat > /usr/local/sbin/sejf-zamknij <<'EOF'
+#!/bin/bash
+# Zamyka sejf (np. przed dluzszym wyjazdem). Dysk S: przestaje dzialac.
+if [ "$(id -u)" -ne 0 ]; then echo "Uzyj:  sudo sejf-zamknij"; exit 1; fi
+mountpoint -q /srv/sejf || { echo "Sejf jest juz zamkniety."; exit 0; }
+systemctl stop smbd
+umount /srv/sejf && cryptsetup close sejf && echo "Sejf zamkniety."
+systemctl start smbd
+EOF
+chmod 755 /usr/local/sbin/sejf-zamknij
+
+echo
+echo "=== 5/5 Uruchamiam ==="
+systemctl start smbd
+/usr/local/sbin/firma-migawka
+echo
+df -h "$MNT" | awk 'NR==1 || NR==2'
+echo
+echo "Po kazdym wlaczeniu serwera otworz sejf poleceniem:   sudo sejf"
+echo "(z Twojego komputera: serwer.bat, potem sudo sejf i haslo do sejfu)"
+echo
+echo "GOTOWE - skopiuj teraz baze klientow na dysk S: jeszcze raz."
