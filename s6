@@ -1,0 +1,35 @@
+#!/bin/bash
+# Diagnoza logowania do folderu firmowego - wersja 2 (niczego nie zmienia na stale).
+# Uruchomienie na serwerze:  sudo bash s6
+export LC_ALL=C
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s6"; exit 1; fi
+smbcontrol smbd debug 3 >/dev/null 2>&1
+echo
+echo "Wlaczylem szczegolowy dziennik logowan."
+echo "TERAZ na komputerze zony sprobuj podlaczyc dysk S:"
+echo "  folder: \\\\192.168.10.100\\Firma   uzytkownik: server\\weiser"
+echo "Poczekaj, az pojawi sie blad, dopiero potem wroc tutaj i nacisnij Enter."
+read -r _
+sleep 2
+smbcontrol smbd debug 1 >/dev/null 2>&1
+LOGS() { cat /var/log/samba/log.* 2>/dev/null; journalctl -u smbd --since "-20min" -o cat 2>/dev/null; }
+echo
+echo "=== 1. Proby logowania ==="
+LOGS | grep "Auth: \[" \
+ | sed -n 's/.*user \[\([^]]*\)\]\\\[\([^]]*\)\].* with \[\([^]]*\)\] status \[\([^]]*\)\].*workstation \[\([^]]*\)\].*remote host \[ipv[46]:\([^]]*\)\].*/\6 | \5 | \1\\\2 | \3 | \4/p' \
+ | tail -6
+echo
+echo "=== 2. Inne komunikaty ==="
+LOGS | grep -E "NT_STATUS|denied|FAILED|guest|not allowed" | grep -v "Auth: \[" | tail -6 | cut -c1-150
+echo
+echo "=== 3. Zablokowane przez zapore ==="
+journalctl -k --since "-20min" -o cat 2>/dev/null | grep "UFW BLOCK" \
+ | sed -n 's/.*SRC=\([^ ]*\).*DPT=\([0-9]*\).*/\1 -> port \2/p' | sort | uniq -c | tail -5
+echo
+echo "=== 4. Polaczone komputery ==="
+smbstatus -b 2>/dev/null | tail -n +5
+echo
+echo "=== 5. Ustawienia dziennika ==="
+testparm -sv 2>/dev/null | grep -E "^\s*(log file|logging|map to guest) =" | sed 's/^\s*//'
+echo
+echo "Zrob zdjecie tego ekranu i przeslij."
