@@ -1,0 +1,26 @@
+#!/bin/bash
+# Diagnoza logowania do folderu firmowego (niczego nie zmienia na stale).
+# Uruchomienie na serwerze:  sudo bash s5
+export LC_ALL=C
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s5"; exit 1; fi
+MARK=$(date '+%Y/%m/%d %H:%M:%S')
+smbcontrol smbd debug 3 >/dev/null 2>&1
+echo
+echo "Wlaczylem szczegolowy dziennik logowan."
+echo "TERAZ na komputerze zony sprobuj podlaczyc dysk S: (uzytkownik server\\weiser)."
+echo "Gdy pojawi sie blad, wroc tutaj i nacisnij Enter."
+read -r _
+smbcontrol smbd debug 1 >/dev/null 2>&1
+echo
+echo "=== Proby logowania (najnowsze na dole) ==="
+grep -h "Auth: \[" /var/log/samba/log.* 2>/dev/null \
+ | sed -n 's/.*user \[\([^]]*\)\]\\\[\([^]]*\)\].* with \[\([^]]*\)\] status \[\([^]]*\)\].*workstation \[\([^]]*\)\].*remote host \[ipv4:\([0-9.]*\).*/\6  \5  \1\\\2  \3  \4/p' \
+ | tail -8
+echo
+echo "=== Konta Samba ==="
+pdbedit -L 2>/dev/null | cut -d: -f1
+echo
+echo "=== Sejf ==="
+mountpoint -q /srv/sejf && echo "otwarty" || echo "ZAMKNIETY - otworz: sudo sejf"
+echo
+echo "Zrob zdjecie tego ekranu i przeslij."
