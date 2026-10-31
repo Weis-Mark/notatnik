@@ -1,0 +1,69 @@
+#!/bin/bash
+# Diagnoza nr 4: krok po kroku, co sie dzieje przy logowaniu z komputera zony.
+# Niczego nie zmienia na stale. Uruchomienie na serwerze:  sudo bash s8
+export LC_ALL=C
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s8"; exit 1; fi
+ZONA="${1:-192.168.10.114}"
+command -v tcpdump >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q tcpdump >/dev/null 2>&1
+IFACE=$(ip route get "$ZONA" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+PCAP=/root/zona-smb.pcap; rm -f "$PCAP"
+for f in /var/log/samba/log.*; do echo "$(wc -l < "$f") $f"; done > /root/log-przed.txt 2>/dev/null
+tcpdump -i "$IFACE" -nn -s 0 -U -w "$PCAP" host "$ZONA" and port 445 >/dev/null 2>&1 &
+TPID=$!
+smbcontrol smbd debug 5 >/dev/null 2>&1
+sleep 1
+echo
+echo "Nasluchuje ($ZONA). TERAZ na komputerze zony: polecenie net use + haslo."
+echo "Gdy pojawi sie blad, wroc tutaj i nacisnij Enter."
+read -r _
+sleep 2
+kill "$TPID" 2>/dev/null; wait "$TPID" 2>/dev/null
+smbcontrol smbd debug 1 >/dev/null 2>&1
+echo
+echo "=== A. Przebieg polaczenia ==="
+python3 - "$PCAP" "$ZONA" <<'PY'
+import struct, sys
+ST = {0:"OK",0xC0000016:"dalej",0xC0000022:"ACCESS_DENIED",0xC000006D:"LOGON_FAILURE",0xC00000CC:"BAD_NETWORK_NAME",0xC000015B:"LOGON_TYPE_NOT_GRANTED",0xC0000064:"NO_SUCH_USER",0xC00000BB:"NOT_SUPPORTED",0xC000009A:"NO_RESOURCES",0xC000035C:"NETWORK_SESSION_EXPIRED"}
+CMD = {0:"NEGOTIATE",1:"SESSION_SETUP",2:"LOGOFF",3:"TREE_CONNECT",4:"TREE_DISC",5:"CREATE",6:"CLOSE",11:"IOCTL",16:"QUERY_INFO"}
+try: data = open(sys.argv[1], "rb").read()
+except Exception: print("brak zapisu"); sys.exit()
+zona = sys.argv[2]
+E = "<" if data[:4] == b"\xd4\xc3\xb2\xa1" else ">"
+link = struct.unpack(E+"I", data[20:24])[0]
+pos, lines, t0 = 24, [], None
+while pos + 16 <= len(data):
+    ts, tu, incl, _ = struct.unpack(E+"IIII", data[pos:pos+16]); pos += 16
+    pkt = data[pos:pos+incl]; pos += incl
+    t = ts + tu/1e6; t0 = t if t0 is None else t0
+    off = 14 if link == 1 else (16 if link == 113 else 20)
+    ip = pkt[off:]
+    if len(ip) < 20: continue
+    ihl = (ip[0] & 15) * 4; tcp = ip[ihl:]
+    src = ".".join(map(str, ip[12:16]))
+    who = "ZONA  ->" if src == zona else "SERWER->"
+    fl = tcp[13]; flags = "".join(n for b, n in ((2,"SYN"),(1,"FIN"),(4,"RST")) if fl & b)
+    pl = tcp[(tcp[12] >> 4) * 4:]
+    info = []
+    if pl[4:8] == b"\xffSMB" or b"\xffSMB" in pl[:8]: info.append("SMB1-NEGOTIATE")
+    i = pl.find(b"\xfeSMB")
+    while i >= 0 and i + 64 <= len(pl):
+        st = struct.unpack("<I", pl[i+8:i+12])[0]; cmd = struct.unpack("<H", pl[i+12:i+14])[0]
+        resp = struct.unpack("<I", pl[i+16:i+20])[0] & 1
+        info.append("%s%s" % (CMD.get(cmd, cmd), (" ["+ST.get(st, hex(st))+"]") if resp else ""))
+        i = pl.find(b"\xfeSMB", i + 64)
+    j = pl.find(b"NTLMSSP\x00")
+    if j >= 0:
+        ty = struct.unpack("<I", pl[j+8:j+12])[0]
+        info.append({1:"NTLM-1(prosba)",2:"NTLM-2(wyzwanie)",3:"NTLM-3(odpowiedz z haslem)"}.get(ty, "NTLM-%d" % ty))
+    if flags or info:
+        lines.append("%6.2fs %s %-8s %s" % (t - t0, who, flags, " ".join(info)))
+print("\n".join(lines[-30:]) if lines else "brak pakietow")
+PY
+echo
+echo "=== B. Komunikaty serwera ==="
+while read -r n f; do [ -f "$f" ] && tail -n +"$((n+1))" "$f"; done < /root/log-przed.txt 2>/dev/null > /root/log-nowe.txt
+for f in /var/log/samba/log.*; do grep -q " $f\$" /root/log-przed.txt || cat "$f"; done >> /root/log-nowe.txt 2>/dev/null
+grep -iE "ntlmssp|NT_STATUS|auth|panic|gensec|denied|guest|signing|error" /root/log-nowe.txt \
+ | grep -v "^\s*$" | sed 's/^ *//' | cut -c1-140 | tail -15
+echo
+echo "Zrob zdjecie (lub dwa, jesli dlugie) i przeslij."
