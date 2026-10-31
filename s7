@@ -1,0 +1,85 @@
+#!/bin/bash
+# Diagnoza nr 3: podglad ruchu sieciowego z komputera zony do folderu firmowego.
+# Niczego nie zmienia na stale. Uruchomienie na serwerze:  sudo bash s7
+export LC_ALL=C
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s7"; exit 1; fi
+ZONA="${1:-192.168.10.114}"
+command -v tcpdump >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q tcpdump >/dev/null 2>&1
+IFACE=$(ip route get "$ZONA" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+PCAP=/root/zona-smb.pcap
+rm -f "$PCAP"
+tcpdump -i "$IFACE" -nn -s 0 -U -w "$PCAP" host "$ZONA" and port 445 >/dev/null 2>&1 &
+TPID=$!
+sleep 1
+echo
+echo "Nasluchuje polaczen z komputera zony ($ZONA)."
+echo "TERAZ na komputerze zony: strzalka w gore i Enter (polecenie net use), potem haslo."
+echo "Gdy pojawi sie blad, wroc tutaj i nacisnij Enter."
+read -r _
+sleep 2
+kill "$TPID" 2>/dev/null; wait "$TPID" 2>/dev/null
+echo
+echo "=== Wynik ==="
+python3 - "$PCAP" <<'PY'
+import struct, sys
+ST = {0:"OK", 0xC0000016:"(dalszy krok logowania)", 0xC0000022:"ODMOWA DOSTEPU (ACCESS_DENIED)",
+      0xC000006D:"ZLE HASLO LUB NAZWA (LOGON_FAILURE)", 0xC00000CC:"NIE MA TAKIEGO FOLDERU (BAD_NETWORK_NAME)",
+      0xC000015B:"LOGOWANIE TEGO TYPU ZABRONIONE", 0xC0000072:"KONTO WYLACZONE", 0xC0000064:"NIE MA TAKIEGO UZYTKOWNIKA",
+      0xC00000BB:"NIEOBSLUGIWANE", 0xC0000203:"SESJA USUNIETA", 0xC0000034:"NIE ZNALEZIONO"}
+CMD = {0:"NEGOTIATE",1:"SESSION_SETUP (logowanie)",2:"LOGOFF",3:"TREE_CONNECT (folder)",4:"TREE_DISCONNECT",5:"CREATE",11:"IOCTL"}
+try:
+    data = open(sys.argv[1], "rb").read()
+except Exception:
+    print("Brak zapisu ruchu."); sys.exit()
+if len(data) < 24:
+    print("Brak zapisu ruchu."); sys.exit()
+le = data[:4] == b"\xd4\xc3\xb2\xa1"
+E = "<" if le else ">"
+link = struct.unpack(E+"I", data[20:24])[0]
+pos, n, out, ntlm, smb1 = 24, 0, [], [], False
+while pos + 16 <= len(data):
+    _, _, incl, _ = struct.unpack(E+"IIII", data[pos:pos+16]); pos += 16
+    pkt = data[pos:pos+incl]; pos += incl; n += 1
+    off = 14 if link == 1 else (16 if link == 113 else (20 if link == 276 else 0))
+    if link == 1 and len(pkt) > 14 and pkt[12:14] == b"\x81\x00": off = 18
+    ip = pkt[off:]
+    if len(ip) < 20 or ip[0] >> 4 != 4: continue
+    ihl = (ip[0] & 15) * 4; tcp = ip[ihl:]
+    if len(tcp) < 20: continue
+    pl = tcp[(tcp[12] >> 4) * 4:]
+    src = ".".join(map(str, ip[12:16]))
+    if b"\xffSMB" in pl: smb1 = True
+    i = pl.find(b"\xfeSMB")
+    while i >= 0 and i + 64 <= len(pl):
+        status = struct.unpack("<I", pl[i+8:i+12])[0]
+        cmd = struct.unpack("<H", pl[i+12:i+14])[0]
+        resp = struct.unpack("<I", pl[i+16:i+20])[0] & 1
+        if resp:
+            out.append("serwer -> %-28s %s" % (CMD.get(cmd, str(cmd)), ST.get(status, hex(status))))
+        i = pl.find(b"\xfeSMB", i + 64)
+    j = pl.find(b"NTLMSSP\x00\x03\x00\x00\x00")
+    if j >= 0:
+        m = pl[j:]
+        def fld(o):
+            l, _, of = struct.unpack("<HHI", m[o:o+8]); return m[of:of+l]
+        try:
+            ntl = len(fld(20))
+            dom = fld(28).decode("utf-16-le", "replace"); usr = fld(36).decode("utf-16-le", "replace")
+            ws = fld(44).decode("utf-16-le", "replace")
+            ntlm.append("logowanie jako [%s\\%s] z komputera [%s], metoda: %s" % (dom, usr, ws,
+                        "NTLMv2 (dobra)" if ntl > 24 else ("NTLMv1 (PRZESTARZALA)" if ntl == 24 else "pusta/anonimowa")))
+        except Exception:
+            pass
+print("Pakietow z komputera zony do folderu: %d" % n)
+if n == 0:
+    print(">>> Komputer zony W OGOLE nie polaczyl sie z folderem na serwerze.")
+    print(">>> Blokada jest po stronie komputera zony (np. zapora / program antywirusowy).")
+if smb1: print(">>> Komputer zony probuje bardzo starej wersji protokolu (SMB1).")
+for x in ntlm: print(x)
+seen = []
+for x in out:
+    if x not in seen: seen.append(x)
+for x in seen[-8:]: print(x)
+PY
+echo
+echo "Zrob zdjecie tego ekranu i przeslij."
