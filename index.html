@@ -93,6 +93,7 @@ body.focus #meta{padding-left:32px;padding-right:32px}
 #body td p{margin:0}
 #body ul,#body ol{margin:.2em 0 .5em;padding-left:1.6em}
 #body a{color:var(--accent)}
+#body img{max-width:100%;height:auto;display:inline-block;vertical-align:bottom;border-radius:3px}
 #body .ph{color:var(--muted);font-size:.9em}
 .empty{padding:28px 20px;color:var(--muted);text-align:center}
 .locked{padding:30px 16px;text-align:center;color:var(--muted)}
@@ -182,6 +183,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
       <button data-cmd="insertUnorderedList" title="Lista punktowana">•</button>
       <button data-cmd="insertOrderedList" title="Lista numerowana">1.</button>
       <button data-cmd="selectStep" title="Zaznacz: raz akapit, drugi raz całą stronę (Ctrl+A)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/></svg></button>
+      <button id="imgBtn" title="Wstaw obrazek (możesz też wkleić Ctrl+V)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.5"/><circle cx="5.5" cy="6.3" r="1.2"/><path d="M2.2 12.2l3.8-3.6 2.6 2.4 2.1-1.9 3.2 3"/></svg></button><input type="file" id="imgPick" accept="image/*" multiple hidden>
       <span class="sep"></span>
       <button data-cmd="justifyLeft" title="Wyrównaj do lewej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="10" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="10" y2="12.9"/></svg></button>
       <button data-cmd="justifyCenter" title="Wyśrodkuj"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="4" y1="6.3" x2="12" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="4" y1="12.9" x2="12" y2="12.9"/></svg></button>
@@ -838,11 +840,64 @@ document.addEventListener("selectionchange",()=>{
   if(sel.rangeCount&&$("#body").contains(sel.anchorNode))lastRange=sel.getRangeAt(0).cloneRange();
   updateAlignBtns();
 });
+/* --- obrazki: wklejanie, przeciąganie, przycisk --- */
+function imgToDataUrl(file){
+  return new Promise((ok,bad)=>{
+    const url=URL.createObjectURL(file),im=new Image();
+    im.onload=()=>{
+      const MAX=1600,s=Math.min(1,MAX/Math.max(im.naturalWidth,im.naturalHeight));
+      const w=Math.max(1,Math.round(im.naturalWidth*s)),h=Math.max(1,Math.round(im.naturalHeight*s));
+      const c=document.createElement("canvas");c.width=w;c.height=h;
+      const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,w,h);g.drawImage(im,0,0,w,h);
+      URL.revokeObjectURL(url);
+      const png=c.toDataURL("image/png"),jpg=c.toDataURL("image/jpeg",0.85);
+      ok(png.length<=jpg.length*1.3?png:jpg);
+    };
+    im.onerror=()=>{URL.revokeObjectURL(url);bad(new Error("nieobsługiwany format obrazka"));};
+    im.src=url;
+  });
+}
+async function insertImages(files){
+  if(hist.t)histCommit();
+  restoreSel();
+  for(const f of files){
+    try{const d=await imgToDataUrl(f);document.execCommand("insertHTML",false,'<img src="'+d+'" alt="">');}
+    catch(e){alert("Nie udało się wstawić obrazka: "+e.message);}
+  }
+  $("#body").dispatchEvent(new Event("input"));histCommit();
+}
+function imageFiles(dt){
+  if(!dt)return[];
+  const out=[];
+  if(dt.items)for(const it of dt.items)if(it.kind==="file"&&/^image\//.test(it.type)){const f=it.getAsFile();if(f)out.push(f);}
+  if(!out.length&&dt.files)for(const f of dt.files)if(/^image\//.test(f.type))out.push(f);
+  return out;
+}
 $("#body").addEventListener("paste",e=>{
   e.preventDefault();
-  const t=(e.clipboardData||window.clipboardData).getData("text/plain");
+  const dt=e.clipboardData||window.clipboardData;
+  const imgs=imageFiles(dt);
+  const t=dt.getData("text/plain");
+  if(imgs.length&&!t.trim()){insertImages(imgs);return;}
   document.execCommand("insertText",false,t);
+  if(imgs.length)insertImages(imgs);
+  else if(/<img\b/i.test(dt.getData("text/html")||""))
+    setTimeout(()=>alert("Wkleiłem sam tekst. Obrazki z OneNote trzeba kopiować pojedynczo: kliknij obrazek w OneNote, Ctrl+C, potem Ctrl+V tutaj."),50);
 });
+$("#body").addEventListener("dragover",e=>{if(imageFiles(e.dataTransfer).length||[...(e.dataTransfer.types||[])].includes("Files"))e.preventDefault();});
+$("#body").addEventListener("drop",e=>{
+  const imgs=imageFiles(e.dataTransfer);if(!imgs.length)return;
+  e.preventDefault();
+  let r=null;
+  if(document.caretRangeFromPoint)r=document.caretRangeFromPoint(e.clientX,e.clientY);
+  else if(document.caretPositionFromPoint){const p=document.caretPositionFromPoint(e.clientX,e.clientY);if(p){r=document.createRange();r.setStart(p.offsetNode,p.offset);}}
+  if(r){const s=getSelection();s.removeAllRanges();s.addRange(r);lastRange=r.cloneRange();}
+  insertImages(imgs);
+});
+$("#imgBtn").addEventListener("mousedown",e=>e.preventDefault());
+$("#imgBtn").addEventListener("pointerdown",e=>e.preventDefault());
+$("#imgBtn").onclick=()=>$("#imgPick").click();
+$("#imgPick").addEventListener("change",e=>{const f=[...e.target.files];e.target.value="";if(f.length)insertImages(f);});
 document.querySelectorAll("[data-cmd]").forEach(b=>{
   b.addEventListener("mousedown",e=>e.preventDefault());
   b.addEventListener("pointerdown",e=>e.preventDefault());
