@@ -1,0 +1,47 @@
+#!/bin/bash
+# Kosz na dysku S: - skasowane pliki trafiaja do folderu S:\Kosz
+# i sa tam trzymane 30 dni, potem znikaja same.
+# Uruchomienie na serwerze:  sudo bash s9
+export LC_ALL=C
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s9"; exit 1; fi
+mountpoint -q /srv/sejf || { echo "Sejf jest zamkniety - najpierw: sudo sejf"; exit 1; }
+CONF=/etc/samba/smb.conf
+if grep -q "recycle:repository" "$CONF"; then echo "Kosz jest juz wlaczony."; exit 0; fi
+cp -a "$CONF" "$CONF.przed-koszem"
+
+echo "=== 1/4 Folder Kosz ==="
+mkdir -p /srv/sejf/firma/Kosz
+chown root:firma /srv/sejf/firma/Kosz; chmod 2770 /srv/sejf/firma/Kosz
+echo OK
+
+echo "=== 2/4 Ustawienia udostepnienia ==="
+sed -i 's/^\( *vfs objects = shadow_copy2\) *$/\1 recycle\
+   recycle:repository = Kosz\
+   recycle:keeptree = yes\
+   recycle:versions = yes\
+   recycle:touch = yes\
+   recycle:directory_mode = 2770\
+   recycle:subdir_mode = 2770\
+   recycle:exclude = *.tmp,~$*,~*.tmp,Thumbs.db,desktop.ini\
+   recycle:exclude_dir = Kosz/' "$CONF"
+if ! grep -q "recycle:repository" "$CONF" || ! testparm -s "$CONF" >/dev/null 2>&1; then
+  cp -a "$CONF.przed-koszem" "$CONF"; echo "BLAD - przywrocilem poprzednie ustawienia."; exit 1
+fi
+echo OK
+
+echo "=== 3/4 Kosz pomijany w godzinnych kopiach ==="
+M=/usr/local/sbin/firma-migawka
+grep -q "exclude=/Kosz/" "$M" || sed -i 's#rsync -a --delete --chmod=Fa-w#rsync -a --delete --exclude=/Kosz/ --chmod=Fa-w#' "$M"
+grep -q "exclude=/Kosz/" "$M" && echo OK || echo "UWAGA: nie udalo sie zmienic kopii"
+
+echo "=== 4/4 Codzienne sprzatanie (pliki starsze niz 30 dni) ==="
+cat > /etc/cron.d/firma-kosz <<'X'
+40 3 * * * root mountpoint -q /srv/sejf && find /srv/sejf/firma/Kosz -mindepth 1 -type f -atime +30 -delete && find /srv/sejf/firma/Kosz -mindepth 1 -type d -empty -delete
+X
+echo OK
+
+systemctl reload smbd
+echo
+echo "GOTOWE. Na dysku S: jest teraz folder Kosz."
+echo "Skasowany plik znajdziesz tam (w tym samym ukladzie folderow) przez 30 dni."
+echo "Aby go odzyskac - po prostu przeciagnij go z Kosza z powrotem."
