@@ -1,0 +1,124 @@
+#!/bin/bash
+# Syncthing - automatyczna kopia zdjec z telefonow na serwer (do sejfu).
+# Uruchomienie na serwerze:  sudo bash s11
+export LC_ALL=C
+set -u
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s11"; exit 1; fi
+mountpoint -q /srv/sejf || { echo "Sejf jest zamkniety - najpierw: sudo sejf"; exit 1; }
+U=weiser; IMG=/srv/sejf.img
+
+echo "=== 1/5 Miejsce w sejfie ==="
+ROOTFREE=$(df -BG --output=avail / | tail -1 | tr -dc 0-9)
+CUR=$(( $(stat -c %s "$IMG") / 1073741824 ))
+ADD=$(( ROOTFREE - 40 ))
+if [ "$ADD" -ge 20 ]; then
+  echo "Powiekszam sejf z ${CUR} GB do $((CUR+ADD)) GB (na system zostaje ok. 40 GB)..."
+  LOOP=$(losetup -j "$IMG" | cut -d: -f1 | head -1)
+  fallocate -l $((CUR+ADD))G "$IMG" && losetup -c "$LOOP" \
+   && { cryptsetup resize sejf || { echo "Podaj haslo do SEJFU:"; cryptsetup resize sejf; }; } \
+   && resize2fs /dev/mapper/sejf >/dev/null 2>&1 && echo "OK" || echo "UWAGA: nie udalo sie powiekszyc sejfu (dane sa bezpieczne) - zrob zdjecie."
+else
+  echo "Sejf zostaje bez zmian."
+fi
+df -h /srv/sejf | awk 'NR==2{print "Sejf: " $2 ", wolne " $4}'
+
+echo
+echo "=== 2/5 Instaluje Syncthing ==="
+DEBIAN_FRONTEND=noninteractive apt-get install -y -q syncthing qrencode python3 >/dev/null 2>&1
+command -v syncthing >/dev/null || { echo "BLAD instalacji Syncthing"; exit 1; }
+mkdir -p /srv/sejf/telefony && chown $U:$U /srv/sejf/telefony && chmod 750 /srv/sejf/telefony
+systemctl enable syncthing@$U >/dev/null 2>&1; systemctl restart syncthing@$U
+grep -q "syncthing@" /usr/local/sbin/sejf || sed -i 's#systemctl restart smbd \&\&#systemctl restart smbd \&\& systemctl restart syncthing@weiser \&\&#' /usr/local/sbin/sejf
+echo OK
+
+echo
+echo "=== 3/5 Zapora (Syncthing tylko przez Tailscale) ==="
+ufw allow in on tailscale0 to any port 22000 proto tcp comment 'Syncthing przez Tailscale' >/dev/null
+ufw allow in on tailscale0 to any port 22000 proto udp comment 'Syncthing przez Tailscale' >/dev/null
+echo OK
+
+echo
+echo "=== 4/5 Podglad zdjec z komputera: \\\\192.168.10.100\\Telefony (tylko odczyt) ==="
+if ! grep -q '^\[Telefony\]' /etc/samba/smb.conf; then
+cat >> /etc/samba/smb.conf <<'X'
+
+[Telefony]
+   path = /srv/sejf/telefony
+   valid users = @firma
+   read only = yes
+   force user = weiser
+X
+systemctl reload smbd
+fi
+echo OK
+
+echo
+echo "=== 5/5 Polecenie do dodawania telefonow ==="
+cat > /usr/local/sbin/telefony <<'PY'
+#!/usr/bin/env python3
+# Akceptuje nowe telefony i ich foldery w Syncthing.  Uzycie:  sudo telefony
+import glob, json, os, re, sys, time, urllib.request
+cfgs = glob.glob('/home/weiser/.local/state/syncthing/config.xml') + glob.glob('/home/weiser/.config/syncthing/config.xml')
+if not cfgs: sys.exit("Brak konfiguracji Syncthing - uruchom najpierw: sudo bash s11")
+key = re.search(r'<apikey>([^<]+)</apikey>', open(cfgs[0]).read()).group(1)
+def api(path, data=None, method=None):
+    req = urllib.request.Request('http://127.0.0.1:8384/rest/' + path, method=method or ('POST' if data is not None else 'GET'),
+                                 data=None if data is None else json.dumps(data).encode(), headers={'X-API-Key': key, 'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        b = r.read(); return json.loads(b) if b.strip() else None
+for i in range(30):
+    try: me = api('system/status')['myID']; break
+    except Exception: time.sleep(2)
+else: sys.exit("Syncthing nie odpowiada.")
+def safe(n): return re.sub(r'[^A-Za-z0-9 _.-]', '_', n).strip() or 'telefon'
+names = {d['deviceID']: d['name'] for d in api('config/devices')}
+pend = api('cluster/pending/devices') or {}
+for did, info in pend.items():
+    print("\nNowy telefon chce sie polaczyc: " + (info.get('name') or '?'))
+    n = input("Nazwij go (np. Markus, Dosia-1, Dosia-2) i Enter (puste = pomin): ").strip()
+    if not n: continue
+    d = api('config/defaults/device'); d.update(deviceID=did, name=safe(n), addresses=['dynamic'])
+    api('config/devices', d); names[did] = safe(n); print("Dodano: " + safe(n))
+pf = api('cluster/pending/folders') or {}
+if pend:
+    print("\nCzekam do 2 minut na foldery z telefonu...")
+    for i in range(24):
+        pf = api('cluster/pending/folders') or {}
+        if any(d in names for x in pf.values() for d in x.get('offeredBy', {})): time.sleep(10); pf = api('cluster/pending/folders') or {}; break
+        time.sleep(5)
+added = 0
+for fid, info in pf.items():
+    for did, o in info.get('offeredBy', {}).items():
+        if did not in names: continue
+        label = o.get('label') or fid
+        path = '/srv/sejf/telefony/%s/%s' % (names[did], safe(label))
+        f = api('config/defaults/folder')
+        f.update(id=fid, label='%s - %s' % (names[did], label), path=path, type='receiveonly', ignoreDelete=True,
+                 devices=[{'deviceID': me}, {'deviceID': did}])
+        os.makedirs(path, exist_ok=True); os.system('chown -R weiser:weiser /srv/sejf/telefony')
+        api('config/folders', f); added += 1
+        print("Folder %-12s z telefonu %-10s -> %s" % (label, names[did], path))
+if not pend and not added: print("Brak nowych telefonow ani folderow do dodania.")
+print("\nTelefony: " + ", ".join(v for k, v in names.items() if k != me))
+PY
+chmod 755 /usr/local/sbin/telefony
+sleep 3
+ID=$(python3 - <<'P'
+import glob,re,json,urllib.request,time
+c=(glob.glob('/home/weiser/.local/state/syncthing/config.xml')+glob.glob('/home/weiser/.config/syncthing/config.xml'))
+for i in range(30):
+    try:
+        k=re.search(r'<apikey>([^<]+)</apikey>',open(c[0]).read()).group(1)
+        r=urllib.request.Request('http://127.0.0.1:8384/rest/system/status',headers={'X-API-Key':k})
+        print(json.load(urllib.request.urlopen(r,timeout=5))['myID']); break
+    except Exception: time.sleep(2)
+P
+)
+[ -n "$ID" ] || { echo "Syncthing nie wystartowal - zrob zdjecie."; exit 1; }
+echo "$ID" > /srv/sejf/firma/syncthing-serwer-ID.txt; chown root:firma /srv/sejf/firma/syncthing-serwer-ID.txt; chmod 664 /srv/sejf/firma/syncthing-serwer-ID.txt
+echo
+qrencode -t ANSIUTF8 -m 2 "$ID"
+echo "Identyfikator serwera (jest tez w pliku S:\\syncthing-serwer-ID.txt):"
+echo "$ID"
+echo
+echo "GOTOWE. Teraz telefon - wg instrukcji od Claude."
