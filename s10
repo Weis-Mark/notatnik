@@ -1,0 +1,41 @@
+#!/bin/bash
+# Tailscale - bezpieczny dostep do folderu firmowego z telefonu (poza domem).
+# Uruchomienie na serwerze:  sudo bash s10
+export LC_ALL=C
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s10"; exit 1; fi
+
+echo "=== 1/3 Instaluje Tailscale ==="
+if ! command -v tailscale >/dev/null; then
+  curl -fsSL https://tailscale.com/install.sh | sh >/tmp/ts-install.log 2>&1
+  if ! command -v tailscale >/dev/null; then
+    # zapasowo: repozytorium dla Ubuntu 24.04 (dziala tez na nowszych)
+    mkdir -p /usr/share/keyrings
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list
+    apt-get update -q >/dev/null 2>&1
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q tailscale >>/tmp/ts-install.log 2>&1
+  fi
+fi
+command -v tailscale >/dev/null || { echo "BLAD instalacji - zrob zdjecie:"; tail -5 /tmp/ts-install.log; exit 1; }
+systemctl enable --now tailscaled >/dev/null 2>&1
+echo OK
+
+echo
+echo "=== 2/3 Zapora: folder firmowy dostepny tez przez Tailscale ==="
+ufw allow in on tailscale0 to any port 445 proto tcp comment 'Folder firmowy przez Tailscale' >/dev/null
+echo OK
+
+echo
+echo "=== 3/3 Logowanie serwera do Twojego konta Tailscale ==="
+if tailscale status >/dev/null 2>&1; then
+  echo "Serwer jest juz zalogowany."
+else
+  echo "Za chwile pojawi sie adres https://login.tailscale.com/...."
+  echo "PRZEPISZ go do przegladarki na komputerze (albo zrob zdjecie i przeslij Claude),"
+  echo "zaloguj sie kontem Google i kliknij Connect. Skrypt sam pojdzie dalej."
+  echo
+  tailscale up --hostname=serwer --ssh=false
+fi
+echo
+echo "Adres serwera w Tailscale:  $(tailscale ip -4 2>/dev/null)"
+echo "GOTOWE."
