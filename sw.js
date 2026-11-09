@@ -1,6 +1,6 @@
 // Notatnik – praca offline. Najpierw sieć (żeby aktualizacje z GitHuba docierały od razu),
 // a gdy brak internetu – ostatnia zapisana wersja aplikacji. Notatki są w bazie przeglądarki, nie tutaj.
-const CACHE = "notatnik-app-v7";
+const CACHE = "notatnik-app-v8";
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png", "./apple-touch-icon.png"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

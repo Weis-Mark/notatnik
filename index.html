@@ -65,8 +65,10 @@ main{flex:1;display:flex;min-height:0;position:relative}
 .back{display:none}
 #toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 14px;z-index:99;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none;opacity:0;transition:opacity .25s}
 #toast.on{opacity:1}
-.fs{position:absolute;right:2px;width:30px;pointer-events:none;z-index:5;display:none}
-.fs-thumb{position:absolute;left:4px;right:2px;min-height:48px;border-radius:12px;background:var(--accent);opacity:.45;pointer-events:auto;touch-action:none}
+.fs{position:absolute;right:0;width:40px;pointer-events:none;z-index:5;display:none}
+.fs-thumb{position:absolute;left:6px;right:2px;min-height:64px;border-radius:14px;background:var(--accent);opacity:.5;pointer-events:auto;touch-action:none}
+.fs-jump{position:absolute;right:48px;bottom:12px;display:flex;flex-direction:column;gap:8px;pointer-events:auto}
+.fs-jump button{width:44px;height:44px;border-radius:50%;padding:0;font-size:20px;background:var(--panel);border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.25);opacity:.9}
 .fs.drag .fs-thumb{opacity:.85}
 @media (min-width:700px){body.focus #secPane,body.focus #pagePane{display:none}}
 body.focus #results{left:0;border-left:0}
@@ -812,32 +814,40 @@ $("#body").addEventListener("keydown",e=>{
 function selectStep(){
   const sel=getSelection(),body=$("#body");
   const r=restoreSel()||(()=>{const x=document.createRange();x.selectNodeContents(body);x.collapse(true);return x;})();
-  const b=blockOf(r.startContainer);
-  const all=document.createRange();all.selectNodeContents(body);
   const put=x=>{try{body.focus({preventScroll:true});}catch(e){}sel.removeAllRanges();sel.addRange(x);lastRange=x.cloneRange();};
-  if(b){
-    const lr=lineRange(b,r);
-    if(lr){const inL=r.compareBoundaryPoints(Range.START_TO_START,lr)>=0&&r.compareBoundaryPoints(Range.END_TO_END,lr)<=0;
-      const sameL=r.compareBoundaryPoints(Range.START_TO_START,lr)===0&&r.compareBoundaryPoints(Range.END_TO_END,lr)===0;
-      if(inL&&!sameL){put(lr);return;}}
-    const br=document.createRange();br.selectNodeContents(b);
-    const same=r.compareBoundaryPoints(Range.START_TO_START,br)===0&&r.compareBoundaryPoints(Range.END_TO_END,br)===0;
-    const inside=r.compareBoundaryPoints(Range.START_TO_START,br)>=0&&r.compareBoundaryPoints(Range.END_TO_END,br)<=0;
-    if(inside&&!same){put(br);return;}
-  }
-  put(all);
+  const within=(a,o)=>a.compareBoundaryPoints(Range.START_TO_START,o)>=0&&a.compareBoundaryPoints(Range.END_TO_END,o)<=0;
+  const same=(a,o)=>a.compareBoundaryPoints(Range.START_TO_START,o)===0&&a.compareBoundaryPoints(Range.END_TO_END,o)===0;
+  const b=blockOf(r.startContainer);
+  const steps=[lineRange(r,b)];
+  if(b){const br=document.createRange();br.selectNodeContents(b);steps.push(br);}
+  for(const x of steps)if(x&&within(r,x)&&!same(r,x)){put(x);return;}
+  const all=document.createRange();all.selectNodeContents(body);put(all);
 }
-/* jedna linia w akapicie podzielonym klawiszem Shift+Enter (<br>); null = akapit ma tylko jedna linie */
-function lineRange(b,r){
-  const caret=r.cloneRange();caret.collapse(true);
-  const tw=document.createTreeWalker(b,NodeFilter.SHOW_ELEMENT,{acceptNode:n=>n.tagName==="BR"?1:3});
-  let prev=null,next=null,n;
-  while((n=tw.nextNode())){const pos=document.createRange();pos.setStartBefore(n);
-    if(caret.compareBoundaryPoints(Range.START_TO_START,pos)>0)prev=n;else{next=n;break;}}
-  if(!prev&&!next)return null;
+/* jedna linia: tekst miedzy znakami nowej linii (<br>) albo granicami akapitow */
+function lineRange(r,b){
+  const body=$("#body"),caret=r.cloneRange();caret.collapse(true);
+  const isBlock=n=>n.nodeType===1&&n.matches(BLOCKS+",ul,ol,table,tr,h5,h6");
   const lr=document.createRange();
-  if(prev)lr.setStartAfter(prev);else lr.setStart(b,0);
-  if(next)lr.setEndBefore(next);else lr.setEnd(b,b.childNodes.length);
+  if(b){
+    const tw=document.createTreeWalker(b,NodeFilter.SHOW_ELEMENT,{acceptNode:n=>n.tagName==="BR"?1:3});
+    let prev=null,next=null,n;
+    while((n=tw.nextNode())){const pos=document.createRange();pos.setStartBefore(n);
+      if(caret.compareBoundaryPoints(Range.START_TO_START,pos)>0)prev=n;else{next=n;break;}}
+    if(prev)lr.setStartAfter(prev);else lr.setStart(b,0);
+    if(next)lr.setEndBefore(next);else lr.setEnd(b,b.childNodes.length);
+    return lr;
+  }
+  // tekst wpisany bez akapitow: szukamy granic wsrod elementow najwyzszego poziomu
+  let top=caret.startContainer;
+  if(top===body){top=body.childNodes[caret.startOffset]||body.lastChild;}
+  else while(top&&top.parentNode!==body)top=top.parentNode;
+  if(!top)return null;
+  if(top.nodeType===1&&top.tagName==="BR"&&caret.startContainer===body&&top.previousSibling)top=top.previousSibling;
+  let a=top,z=top;
+  while(a.previousSibling&&!(a.previousSibling.tagName==="BR"||isBlock(a.previousSibling)))a=a.previousSibling;
+  while(z.nextSibling&&!(z.nextSibling.tagName==="BR"||isBlock(z.nextSibling)))z=z.nextSibling;
+  if(isBlock(a)||a.tagName==="BR")return null;
+  lr.setStartBefore(a);lr.setEndAfter(z);
   return lr;
 }
 /* --- zapamiętanie zaznaczenia (telefon gubi je przy dotknięciu przycisku) --- */
@@ -1065,18 +1075,23 @@ if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostnam
 }
 
 /* --- szeroki suwak do szybkiego przewijania (telefon/dotyk) --- */
-const touchUI=matchMedia("(hover:none)").matches;
+const touchUI=matchMedia("(pointer:coarse)").matches||matchMedia("(any-pointer:coarse)").matches||matchMedia("(max-width:699px)").matches;
 const fsList=[];
 function fastScroll(el){
   if(!touchUI||!el)return;
   const track=document.createElement("div");track.className="fs";
   const th=document.createElement("div");th.className="fs-thumb";track.append(th);
+  const jp=document.createElement("div");jp.className="fs-jump";
+  jp.innerHTML='<button title="Na początek">⤒</button><button title="Na koniec">⤓</button>';
+  jp.children[0].onclick=()=>{el.scrollTop=0;};jp.children[1].onclick=()=>{el.scrollTop=el.scrollHeight;};
+  jp.querySelectorAll("button").forEach(x=>x.addEventListener("pointerdown",e=>e.preventDefault()));
+  track.append(jp);
   el.parentElement.append(track);
   const upd=()=>{
     const sh=el.scrollHeight,ch=el.clientHeight;
     if(!ch||sh<ch*2.5||getComputedStyle(el).display==="none"){track.style.display="none";return;}
     track.style.display="block";track.style.top=el.offsetTop+"px";track.style.height=ch+"px";
-    const h=Math.max(48,ch*ch/sh);th.style.height=h+"px";
+    const h=Math.max(64,ch*ch/sh);th.style.height=h+"px";
     th.style.top=((ch-h)*el.scrollTop/(sh-ch))+"px";
   };
   let dy=0;
