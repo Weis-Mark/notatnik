@@ -63,6 +63,8 @@ main{flex:1;display:flex;min-height:0;position:relative}
 .pitem small{color:var(--muted);font-weight:400;font-size:11.5px}
 .addrow{margin:6px;border:1px dashed var(--line)}
 .back{display:none}
+#toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 14px;z-index:99;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none;opacity:0;transition:opacity .25s}
+#toast.on{opacity:1}
 .fs{position:absolute;right:2px;width:30px;pointer-events:none;z-index:5;display:none}
 .fs-thumb{position:absolute;left:4px;right:2px;min-height:48px;border-radius:12px;background:var(--accent);opacity:.45;pointer-events:auto;touch-action:none}
 .fs.drag .fs-thumb{opacity:.85}
@@ -155,6 +157,8 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
 <header>
   <span class="brand">📝 Notatnik</span>
   <div class="search"><input id="q" type="search" placeholder="Szukaj…  (Ctrl+F)" autocomplete="off"></div>
+  <button id="softRef" title="Odśwież widok (działa bez internetu)">↺</button>
+  <button id="hardRef" title="Pełne odświeżenie – pobierz najnowszą wersję (wymaga internetu)">🔄</button>
   <button id="appMore" title="Ustawienia">⚙</button>
 </header>
 <main>
@@ -1090,6 +1094,26 @@ fastScroll($("#secList"));fastScroll($("#pageList"));fastScroll($("#doc"));
 window.addEventListener("resize",fsUpdate);
 if(window.ResizeObserver){const ro=new ResizeObserver(fsUpdate);["#secList","#pageList","#doc","#body"].forEach(q=>ro.observe($(q)));}
 if(touchUI)new MutationObserver(()=>requestAnimationFrame(fsUpdate)).observe(document.body,{attributes:true,attributeFilter:["data-view","class"]});
+
+/* --- przyciski odświeżania (jak w słowniku) --- */
+function toast(t){let el=$("#toast");if(!el){el=document.createElement("div");el.id="toast";document.body.append(el);}
+  el.textContent=t;el.classList.add("on");clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove("on"),1800);}
+function softRefresh(){
+  document.body.style.height="";window.scrollTo(0,0);
+  if(window.visualViewport)window.dispatchEvent(new Event("resize"));
+  const v=document.body.dataset.view;render();setView(v);fsUpdate();
+  toast("✓ Widok odświeżony");
+}
+async function hardRefresh(){
+  if(!navigator.onLine){alert("Brak internetu. Pełne odświeżenie pobiera aplikację z sieci – użyj teraz przycisku ↺ (odświeżenie widoku bez internetu).");return;}
+  toast("Zapisuję i pobieram najnowszą wersję…");
+  try{await doSave();}catch(e){}
+  try{if("serviceWorker" in navigator){const regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.map(r=>r.unregister()));}}catch(e){}
+  try{if(window.caches){const ks=await caches.keys();await Promise.all(ks.map(k=>caches.delete(k)));}}catch(e){}
+  setTimeout(()=>location.reload(),300);
+}
+$("#softRef").onclick=softRefresh;
+$("#hardRef").onclick=hardRefresh;
 
 /* ---------- start ---------- */
 applyTheme();applyFocus();applyFs();setStatus("Wczytywanie…");
