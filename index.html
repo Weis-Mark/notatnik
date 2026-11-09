@@ -243,6 +243,8 @@ if(!settings.scope)settings.scope="sec";
 if(settings.loose===undefined)settings.loose=true;
 if(!settings.theme)settings.theme="auto";
 if(!settings.fs)settings.fs=1;
+function fsStep(d){const L=[0.75,0.85,0.9,1,1.15,1.3,1.5,1.75,2];let i=L.indexOf(settings.fs);if(i<0)i=3;
+  settings.fs=L[Math.max(0,Math.min(L.length-1,i+d))];saveSettings();applyFs();appMenu();}
 function applyFs(){document.documentElement.style.setProperty("--fs",settings.fs);}
 function applyFocus(){
   document.body.classList.toggle("focus",!!settings.focus);
@@ -593,7 +595,8 @@ function appMenu(){
     {label:"⬆ Wczytaj kopię zapasową…",fn:()=>$("#file").click()},
     {label:"🔒 Zablokuj wszystkie chronione zakładki",fn:lockAll},
     {label:"Motyw: "+tn[settings.theme]+" (kliknij, aby zmienić)",fn:()=>{settings.theme={auto:"dark",dark:"light",light:"auto"}[settings.theme];saveSettings();applyTheme();appMenu();}},
-    {label:"Wielkość tekstu notatek: "+Math.round(settings.fs*100)+"% (kliknij, aby zmienić)",fn:()=>{const L=[0.9,1,1.15,1.3,1.5,1.75];settings.fs=L[(L.indexOf(settings.fs)+1)%L.length]||1;saveSettings();applyFs();appMenu();}}
+    {label:"A− Mniejszy tekst notatek (teraz "+Math.round(settings.fs*100)+"%)",fn:()=>fsStep(-1)},
+    {label:"A+ Większy tekst notatek (teraz "+Math.round(settings.fs*100)+"%)",fn:()=>fsStep(1)}
   ]);
 }
 async function exportData(){
