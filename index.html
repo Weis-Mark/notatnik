@@ -449,7 +449,14 @@ function revealActive(){
   });
 }
 function setView(v){document.body.dataset.view=v;requestAnimationFrame(revealActive);}
-function render(){fixUi();renderNb();renderSecs();renderPages();renderEditor();}
+function remember(){
+  if(!settings.lastSec)settings.lastSec={};if(!settings.lastPage)settings.lastPage={};
+  let ch=false;
+  if(ui.nb&&ui.sec&&settings.lastSec[ui.nb]!==ui.sec){settings.lastSec[ui.nb]=ui.sec;ch=true;}
+  if(ui.sec&&ui.page&&settings.lastPage[ui.sec]!==ui.page){settings.lastPage[ui.sec]=ui.page;ch=true;}
+  if(ch)saveSettings();
+}
+function render(){fixUi();remember();renderNb();renderSecs();renderPages();renderEditor();}
 function renderNb(){
   const sel=$("#nbSel");
   sel.innerHTML=state.notebooks.map(n=>`<option value="${n.id}">${esc(n.name)}</option>`).join("")+`<option value="__new">＋ Nowy notes…</option>`;
@@ -505,10 +512,10 @@ function renderEditor(){
 async function openSection(id){
   const sec=curNb().sections.find(s=>s.id===id);if(!sec)return;
   if(sec.enc&&!mem.unlocked[id]){if(!await unlock(sec))return;}
-  if(ui.sec!==id){ui.sec=id;ui.page=null;}
+  if(ui.sec!==id){ui.sec=id;ui.page=(settings.lastPage||{})[id]||null;}
   render();setView("pages");save();
 }
-function openPage(id){ui.page=id;renderPages();renderEditor();setView("editor");save();}
+function openPage(id){ui.page=id;remember();renderPages();renderEditor();setView("editor");save();}
 
 /* ---------- menu ---------- */
 function secMenu(sec){
@@ -516,8 +523,10 @@ function secMenu(sec){
   const opts=[
     {label:"Zmień nazwę",fn:async()=>{const r=await form("Zmień nazwę zakładki",[{k:"n",label:"Nazwa",value:sec.name}]);if(r&&r.n.trim()){sec.name=r.n.trim();save();render();}}},
     {label:"Zmień kolor",fn:()=>menu("Kolor zakładki",COLORS.map(c=>({html:`<span class="sw" style="background:${c}"></span>`,fn:()=>{sec.color=c;save();render();}})),true)},
+    {label:"⤒ Na samą górę listy",fn:()=>{nb.sections.splice(i,1);nb.sections.unshift(sec);save();render();revealActive();}},
     {label:"↑ Przesuń w górę",fn:()=>{move(nb.sections,i,-1);save();render();}},
-    {label:"↓ Przesuń w dół",fn:()=>{move(nb.sections,i,1);save();render();}}
+    {label:"↓ Przesuń w dół",fn:()=>{move(nb.sections,i,1);save();render();}},
+    {label:"⤓ Na sam dół listy",fn:()=>{nb.sections.splice(i,1);nb.sections.push(sec);save();render();revealActive();}}
   ];
   if(!sec.enc)opts.push({label:"🔒 Ustaw hasło",fn:()=>setPassword(sec)});
   else if(un)opts.push({label:"🔒 Zablokuj teraz",fn:()=>lockSec(sec)},{label:"Zmień hasło",fn:()=>setPassword(sec)},{label:"Usuń hasło",fn:()=>removePassword(sec)});
@@ -531,8 +540,10 @@ function secMenu(sec){
 function pageMenu(){
   const sec=curSec(),ps=pagesOf(sec),p=curPage();if(!p)return;const i=ps.indexOf(p);
   menu(p.title||"(bez tytułu)",[
+    {label:"⤒ Na samą górę listy",fn:()=>{ps.splice(i,1);ps.unshift(p);touch(sec);renderPages();revealActive();}},
     {label:"↑ Przesuń w górę",fn:()=>{move(ps,i,-1);touch(sec);renderPages();}},
     {label:"↓ Przesuń w dół",fn:()=>{move(ps,i,1);touch(sec);renderPages();}},
+    {label:"⤓ Na sam dół listy",fn:()=>{ps.splice(i,1);ps.push(p);touch(sec);renderPages();revealActive();}},
     {label:"Przenieś do innej zakładki…",fn:()=>moveMenu(p,sec)},
     {label:"Usuń stronę",danger:true,fn:()=>{if(!confirm("Usunąć tę stronę?"))return;ps.splice(ps.indexOf(p),1);touch(sec);ui.page=null;render();setView("pages");}}
   ]);
@@ -733,7 +744,7 @@ document.addEventListener("keydown",e=>{
   else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="f"){e.preventDefault();$("#q").focus();$("#q").select();}
   else if(e.key==="Escape"){if(!$("#modal").classList.contains("hidden"))closeModal();else closeResults();}
 });
-$("#nbSel").onchange=e=>{const v=e.target.value;if(v==="__new"){newNb();return;}ui.nb=v;ui.sec=null;ui.page=null;render();save();};
+$("#nbSel").onchange=e=>{const v=e.target.value;if(v==="__new"){newNb();return;}ui.nb=v;ui.sec=(settings.lastSec||{})[v]||null;ui.page=ui.sec?((settings.lastPage||{})[ui.sec]||null):null;render();setView(curPage()?"editor":(curSec()?"pages":"sections"));save();};
 $("#nbMore").onclick=nbMenu;
 $("#appMore").onclick=appMenu;
 $("#addSec").onclick=async()=>{
