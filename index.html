@@ -43,7 +43,7 @@ header{display:flex;gap:8px;align-items:center;padding:calc(8px + env(safe-area-
 .search{flex:1;display:flex;min-width:0}
 .search input{flex:1}
 main{flex:1;display:flex;min-height:0;position:relative}
-.pane{display:flex;flex-direction:column;min-height:0;min-width:0;border-right:1px solid var(--line);background:var(--panel)}
+.pane{position:relative;display:flex;flex-direction:column;min-height:0;min-width:0;border-right:1px solid var(--line);background:var(--panel)}
 #secPane{width:210px;flex:none}
 #pagePane{width:240px;flex:none;background:var(--panel2)}
 #editorPane{flex:1;background:var(--bg);border-right:0}
@@ -63,6 +63,9 @@ main{flex:1;display:flex;min-height:0;position:relative}
 .pitem small{color:var(--muted);font-weight:400;font-size:11.5px}
 .addrow{margin:6px;border:1px dashed var(--line)}
 .back{display:none}
+.fs{position:absolute;right:2px;width:30px;pointer-events:none;z-index:5;display:none}
+.fs-thumb{position:absolute;left:4px;right:2px;min-height:48px;border-radius:12px;background:var(--accent);opacity:.45;pointer-events:auto;touch-action:none}
+.fs.drag .fs-thumb{opacity:.85}
 @media (min-width:700px){body.focus #secPane,body.focus #pagePane{display:none}}
 body.focus #results{left:0;border-left:0}
 body.focus #body{max-width:none;padding-left:32px;padding-right:32px}
@@ -448,7 +451,7 @@ function revealActive(){
     if(ar.top<br.top||ar.bottom>br.bottom)box.scrollTop+=ar.top-br.top-(box.clientHeight-ar.height)/2;
   });
 }
-function setView(v){document.body.dataset.view=v;requestAnimationFrame(revealActive);}
+function setView(v){document.body.dataset.view=v;requestAnimationFrame(()=>{revealActive();if(typeof fsUpdate==="function")fsUpdate();});}
 function remember(){
   if(!settings.lastSec)settings.lastSec={};if(!settings.lastPage)settings.lastPage={};
   let ch=false;
@@ -456,7 +459,7 @@ function remember(){
   if(ui.sec&&ui.page&&settings.lastPage[ui.sec]!==ui.page){settings.lastPage[ui.sec]=ui.page;ch=true;}
   if(ch)saveSettings();
 }
-function render(){fixUi();remember();renderNb();renderSecs();renderPages();renderEditor();}
+function render(){fixUi();remember();renderNb();renderSecs();renderPages();renderEditor();if(typeof fsUpdate==="function")requestAnimationFrame(fsUpdate);}
 function renderNb(){
   const sel=$("#nbSel");
   sel.innerHTML=state.notebooks.map(n=>`<option value="${n.id}">${esc(n.name)}</option>`).join("")+`<option value="__new">＋ Nowy notes…</option>`;
@@ -807,13 +810,31 @@ function selectStep(){
   const r=restoreSel()||(()=>{const x=document.createRange();x.selectNodeContents(body);x.collapse(true);return x;})();
   const b=blockOf(r.startContainer);
   const all=document.createRange();all.selectNodeContents(body);
+  const put=x=>{try{body.focus({preventScroll:true});}catch(e){}sel.removeAllRanges();sel.addRange(x);lastRange=x.cloneRange();};
   if(b){
+    const lr=lineRange(b,r);
+    if(lr){const inL=r.compareBoundaryPoints(Range.START_TO_START,lr)>=0&&r.compareBoundaryPoints(Range.END_TO_END,lr)<=0;
+      const sameL=r.compareBoundaryPoints(Range.START_TO_START,lr)===0&&r.compareBoundaryPoints(Range.END_TO_END,lr)===0;
+      if(inL&&!sameL){put(lr);return;}}
     const br=document.createRange();br.selectNodeContents(b);
     const same=r.compareBoundaryPoints(Range.START_TO_START,br)===0&&r.compareBoundaryPoints(Range.END_TO_END,br)===0;
     const inside=r.compareBoundaryPoints(Range.START_TO_START,br)>=0&&r.compareBoundaryPoints(Range.END_TO_END,br)<=0;
-    if(inside&&!same){sel.removeAllRanges();sel.addRange(br);lastRange=br.cloneRange();return;}
+    if(inside&&!same){put(br);return;}
   }
-  sel.removeAllRanges();sel.addRange(all);lastRange=all.cloneRange();
+  put(all);
+}
+/* jedna linia w akapicie podzielonym klawiszem Shift+Enter (<br>); null = akapit ma tylko jedna linie */
+function lineRange(b,r){
+  const caret=r.cloneRange();caret.collapse(true);
+  const tw=document.createTreeWalker(b,NodeFilter.SHOW_ELEMENT,{acceptNode:n=>n.tagName==="BR"?1:3});
+  let prev=null,next=null,n;
+  while((n=tw.nextNode())){const pos=document.createRange();pos.setStartBefore(n);
+    if(caret.compareBoundaryPoints(Range.START_TO_START,pos)>0)prev=n;else{next=n;break;}}
+  if(!prev&&!next)return null;
+  const lr=document.createRange();
+  if(prev)lr.setStartAfter(prev);else lr.setStart(b,0);
+  if(next)lr.setEndBefore(next);else lr.setEnd(b,b.childNodes.length);
+  return lr;
 }
 /* --- zapamiętanie zaznaczenia (telefon gubi je przy dotknięciu przycisku) --- */
 let lastRange=null;
@@ -1038,6 +1059,37 @@ if(window.visualViewport){
 if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost")){
   navigator.serviceWorker.register("sw.js").catch(()=>{});
 }
+
+/* --- szeroki suwak do szybkiego przewijania (telefon/dotyk) --- */
+const touchUI=matchMedia("(hover:none)").matches;
+const fsList=[];
+function fastScroll(el){
+  if(!touchUI||!el)return;
+  const track=document.createElement("div");track.className="fs";
+  const th=document.createElement("div");th.className="fs-thumb";track.append(th);
+  el.parentElement.append(track);
+  const upd=()=>{
+    const sh=el.scrollHeight,ch=el.clientHeight;
+    if(!ch||sh<ch*2.5||getComputedStyle(el).display==="none"){track.style.display="none";return;}
+    track.style.display="block";track.style.top=el.offsetTop+"px";track.style.height=ch+"px";
+    const h=Math.max(48,ch*ch/sh);th.style.height=h+"px";
+    th.style.top=((ch-h)*el.scrollTop/(sh-ch))+"px";
+  };
+  let dy=0;
+  th.addEventListener("pointerdown",e=>{e.preventDefault();th.setPointerCapture(e.pointerId);track.classList.add("drag");dy=e.clientY-th.getBoundingClientRect().top;});
+  th.addEventListener("pointermove",e=>{if(!track.classList.contains("drag"))return;
+    const tr=track.getBoundingClientRect(),h=th.offsetHeight,ch=el.clientHeight,sh=el.scrollHeight;
+    const y=Math.max(0,Math.min(ch-h,e.clientY-tr.top-dy));el.scrollTop=y/(ch-h)*(sh-ch);});
+  const end=()=>track.classList.remove("drag");
+  th.addEventListener("pointerup",end);th.addEventListener("pointercancel",end);
+  el.addEventListener("scroll",upd,{passive:true});
+  fsList.push(upd);
+}
+function fsUpdate(){fsList.forEach(f=>f());}
+fastScroll($("#secList"));fastScroll($("#pageList"));fastScroll($("#doc"));
+window.addEventListener("resize",fsUpdate);
+if(window.ResizeObserver){const ro=new ResizeObserver(fsUpdate);["#secList","#pageList","#doc","#body"].forEach(q=>ro.observe($(q)));}
+if(touchUI)new MutationObserver(()=>requestAnimationFrame(fsUpdate)).observe(document.body,{attributes:true,attributeFilter:["data-view","class"]});
 
 /* ---------- start ---------- */
 applyTheme();applyFocus();applyFs();setStatus("Wczytywanie…");
