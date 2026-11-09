@@ -63,7 +63,7 @@ main{flex:1;display:flex;min-height:0;position:relative}
 .pitem small{color:var(--muted);font-weight:400;font-size:11.5px}
 .addrow{margin:6px;border:1px dashed var(--line)}
 .back{display:none}
-body.focus #secPane,body.focus #pagePane{display:none}
+@media (min-width:700px){body.focus #secPane,body.focus #pagePane{display:none}}
 body.focus #results{left:0;border-left:0}
 body.focus #body{max-width:none;padding-left:32px;padding-right:32px}
 body.focus #title{padding-left:32px;padding-right:32px}
@@ -84,7 +84,7 @@ body.focus #meta{padding-left:32px;padding-right:32px}
 #title{display:block;width:100%;font-size:22px;font-weight:700;border:0;background:transparent;padding:16px 20px 2px;border-radius:0}
 #title:focus{outline:none}
 #meta{padding:0 20px;color:var(--muted);font-size:12px}
-#body{padding:12px 20px 80px;outline:none;max-width:920px;min-height:60%}
+#body{font-size:calc(1em * var(--fs,1));padding:12px 20px 80px;outline:none;max-width:920px;min-height:60%}
 #body:empty:before{content:"Zacznij pisać…";color:var(--muted)}
 #body p{margin:0 0 .45em}
 #body h2{font-size:1.25em;margin:.8em 0 .35em}
@@ -136,7 +136,8 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
   body[data-view="editor"] #secPane,body[data-view="editor"] #pagePane{display:none}
   .back{display:inline-block}
   #focusBtn{display:none}
-  .toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .toolbar{flex-wrap:wrap;row-gap:2px}
+  .toolbar .sp{display:none}
   .toolbar::-webkit-scrollbar{display:none}
   .toolbar button{flex:none}
   #status{display:none}
@@ -232,6 +233,8 @@ try{settings=JSON.parse(localStorage.getItem(SKEY))||{}}catch(e){}
 if(!settings.scope)settings.scope="sec";
 if(settings.loose===undefined)settings.loose=true;
 if(!settings.theme)settings.theme="auto";
+if(!settings.fs)settings.fs=1;
+function applyFs(){document.documentElement.style.setProperty("--fs",settings.fs);}
 function applyFocus(){
   document.body.classList.toggle("focus",!!settings.focus);
   const b=document.getElementById("focusBtn");
@@ -569,7 +572,8 @@ function appMenu(){
     {label:"⬇ Pobierz kopię zapasową (plik)",fn:exportData},
     {label:"⬆ Wczytaj kopię zapasową…",fn:()=>$("#file").click()},
     {label:"🔒 Zablokuj wszystkie chronione zakładki",fn:lockAll},
-    {label:"Motyw: "+tn[settings.theme]+" (kliknij, aby zmienić)",fn:()=>{settings.theme={auto:"dark",dark:"light",light:"auto"}[settings.theme];saveSettings();applyTheme();appMenu();}}
+    {label:"Motyw: "+tn[settings.theme]+" (kliknij, aby zmienić)",fn:()=>{settings.theme={auto:"dark",dark:"light",light:"auto"}[settings.theme];saveSettings();applyTheme();appMenu();}},
+    {label:"Wielkość tekstu notatek: "+Math.round(settings.fs*100)+"% (kliknij, aby zmienić)",fn:()=>{const L=[0.9,1,1.15,1.3,1.5,1.75];settings.fs=L[(L.indexOf(settings.fs)+1)%L.length]||1;saveSettings();applyFs();appMenu();}}
   ]);
 }
 async function exportData(){
@@ -1025,7 +1029,7 @@ if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostnam
 }
 
 /* ---------- start ---------- */
-applyTheme();applyFocus();setStatus("Wczytywanie…");
+applyTheme();applyFocus();applyFs();setStatus("Wczytywanie…");
 load().then(()=>{render();warmCache();setView(curPage()?"editor":(curSec()?"pages":"sections"));setTimeout(revealActive,60);setStatus("");
   if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 }).catch(e=>{alert("Błąd wczytywania notatek: "+e.message);});
