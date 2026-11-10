@@ -59,7 +59,9 @@ main{flex:1;display:flex;min-height:0;position:relative}
 .more{visibility:hidden;min-height:28px;padding:0 6px}
 .item.active .more,.item:hover .more{visibility:visible}
 @media (hover:none){.more{visibility:visible}}
-.pitem{flex-direction:column;align-items:stretch;gap:0}
+.pitem{flex-direction:column;align-items:stretch;gap:0;position:relative;padding-right:40px}
+.pitem .more{position:absolute;right:4px;top:50%;transform:translateY(-50%)}
+.item.pressed{background:var(--accent);color:#fff}
 .pitem small{color:var(--muted);font-weight:400;font-size:11.5px}
 .addrow{margin:6px;border:1px dashed var(--line)}
 .back{display:none}
@@ -473,6 +475,18 @@ function renderNb(){
   sel.innerHTML=state.notebooks.map(n=>`<option value="${n.id}">${esc(n.name)}</option>`).join("")+`<option value="__new">＋ Nowy notes…</option>`;
   sel.value=ui.nb;
 }
+/* przytrzymanie palcem (albo prawy przycisk myszy) otwiera menu */
+function longPress(el,fn){
+  let t=null,x=0,y=0,fired=false;
+  const stop=()=>{clearTimeout(t);t=null;el.classList.remove("pressed");};
+  el.addEventListener("pointerdown",e=>{if(e.button>0)return;fired=false;x=e.clientX;y=e.clientY;
+    t=setTimeout(()=>{fired=true;el.classList.remove("pressed");if(navigator.vibrate)navigator.vibrate(30);fn();},550);
+    setTimeout(()=>{if(t)el.classList.add("pressed");},250);});
+  el.addEventListener("pointermove",e=>{if(t&&(Math.abs(e.clientX-x)>10||Math.abs(e.clientY-y)>10))stop();});
+  ["pointerup","pointercancel","pointerleave"].forEach(ev=>el.addEventListener(ev,stop));
+  el.addEventListener("click",e=>{if(fired){e.stopImmediatePropagation();e.preventDefault();fired=false;}},true);
+  el.addEventListener("contextmenu",e=>{e.preventDefault();if(!fired){stop();fn();}});
+}
 function renderSecs(){
   const box=$("#secList");box.innerHTML="";
   curNb().sections.forEach(sec=>{
@@ -482,6 +496,7 @@ function renderSecs(){
     d.innerHTML=`<span class="dot" style="background:${sec.color}"></span><span class="name">${esc(sec.name)}</span><span>${lock}</span><button class="more" title="Opcje">⋯</button>`;
     d.onclick=()=>openSection(sec.id);
     d.querySelector(".more").onclick=e=>{e.stopPropagation();secMenu(sec);};
+    longPress(d,()=>secMenu(sec));
     box.append(d);
   });
   if(!curNb().sections.length)box.innerHTML=`<div class="empty">Brak zakładek.</div>`;
@@ -502,8 +517,10 @@ function renderPages(){
   ps.forEach(p=>{
     const d=document.createElement("div");
     d.className="item pitem"+(p.id===ui.page?" active":"");
-    d.innerHTML=`<span class="name">${esc(p.title||"(bez tytułu)")}</span><small>${new Date(p.updated).toLocaleDateString("pl-PL",{day:"numeric",month:"short",year:"numeric"})}</small>`;
+    d.innerHTML=`<span class="name">${esc(p.title||"(bez tytułu)")}</span><small>${new Date(p.updated).toLocaleDateString("pl-PL",{day:"numeric",month:"short",year:"numeric"})}</small><button class="more" title="Opcje">⋯</button>`;
     d.onclick=()=>openPage(p.id);
+    d.querySelector(".more").onclick=e=>{e.stopPropagation();pageMenu(p);};
+    longPress(d,()=>pageMenu(p));
     box.append(d);
   });
 }
@@ -548,28 +565,35 @@ function secMenu(sec){
   }});
   menu(sec.name,opts);
 }
-function pageMenu(){
-  const sec=curSec(),ps=pagesOf(sec),p=curPage();if(!p)return;const i=ps.indexOf(p);
+function pageMenu(pg){
+  const sec=curSec(),ps=pagesOf(sec),p=pg||curPage();if(!p||!ps)return;const i=ps.indexOf(p);if(i<0)return;
   menu(p.title||"(bez tytułu)",[
     {label:"⤒ Na samą górę listy",fn:()=>{ps.splice(i,1);ps.unshift(p);touch(sec);renderPages();revealActive();}},
     {label:"↑ Przesuń w górę",fn:()=>{move(ps,i,-1);touch(sec);renderPages();}},
     {label:"↓ Przesuń w dół",fn:()=>{move(ps,i,1);touch(sec);renderPages();}},
     {label:"⤓ Na sam dół listy",fn:()=>{ps.splice(i,1);ps.push(p);touch(sec);renderPages();revealActive();}},
-    {label:"Przenieś do innej zakładki…",fn:()=>moveMenu(p,sec)},
-    {label:"Usuń stronę",danger:true,fn:()=>{if(!confirm("Usunąć tę stronę?"))return;ps.splice(ps.indexOf(p),1);touch(sec);ui.page=null;render();setView("pages");}}
+    {label:"➜ Przenieś do innej zakładki…",fn:()=>moveMenu(p,sec,false)},
+    {label:"⧉ Kopiuj do innej zakładki…",fn:()=>moveMenu(p,sec,true)},
+    {label:"Usuń stronę",danger:true,fn:()=>{if(!confirm("Usunąć stronę „"+(p.title||"bez tytułu")+"”? Tego nie da się cofnąć."))return;
+      ps.splice(ps.indexOf(p),1);touch(sec);if(ui.page===p.id){ui.page=null;setView("pages");}render();}}
   ]);
 }
-function moveMenu(p,from){
+function moveMenu(p,from,copy){
   const opts=[];
   for(const nb of state.notebooks)for(const s of nb.sections){
-    if(s===from)continue;const ps=pagesOf(s);if(!ps)continue;
+    if(s===from&&!copy)continue;const ps=pagesOf(s);if(!ps)continue;
     opts.push({html:`<span class="sw" style="background:${s.color}"></span>${esc(nb.name)} › ${esc(s.name)}`,fn:()=>{
-      const src=pagesOf(from);src.splice(src.indexOf(p),1);ps.push(p);touch(from);touch(s);
-      ui.nb=nb.id;ui.sec=s.id;ui.page=p.id;render();
+      if(copy){
+        const c=JSON.parse(JSON.stringify(p));c.id=uid();c.updated=Date.now();if(s===from)c.title=(c.title||"")+" (kopia)";
+        ps.push(c);touch(s);render();toast("✓ Skopiowano do: "+s.name);
+      }else{
+        const src=pagesOf(from);src.splice(src.indexOf(p),1);ps.push(p);touch(from);touch(s);
+        ui.nb=nb.id;ui.sec=s.id;ui.page=p.id;render();toast("✓ Przeniesiono do: "+s.name);
+      }
     }});
   }
   if(!opts.length){alert("Brak innych dostępnych zakładek. Zablokowane trzeba najpierw odblokować.");return;}
-  menu("Przenieś do…",opts);
+  menu(copy?"Kopiuj do…":"Przenieś do…",opts);
 }
 async function newNb(){
   const r=await form("Nowy notes",[{k:"n",label:"Nazwa notesu"}]);
@@ -770,7 +794,7 @@ $("#addPage").onclick=()=>{
   renderPages();renderEditor();setView("editor");$("#title").focus();
 };
 $("#lockBtn").onclick=()=>{const s=curSec();if(s)lockSec(s);};
-$("#pageMore").onclick=pageMenu;
+$("#pageMore").onclick=()=>pageMenu();
 $("#focusBtn").onclick=()=>toggleFocus();
 document.querySelectorAll(".back").forEach(b=>b.onclick=()=>setView(b.dataset.back));
 $("#title").addEventListener("input",()=>{const p=curPage();if(!p)return;p.title=$("#title").value;p.updated=Date.now();touch(curSec());renderPages();});
