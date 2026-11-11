@@ -1,0 +1,94 @@
+#!/bin/bash
+# Dysk kopii zapasowej (Seagate "EX-dysk") na stale podlaczony do serwera
+# + automatyczna, zaszyfrowana kopia folderu firmowego i zdjec z telefonow co noc.
+# Uruchomienie na serwerze (dysk podlaczony do USB serwera):  sudo bash s12
+export LC_ALL=C
+set -u
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s12"; exit 1; fi
+mountpoint -q /srv/sejf || { echo "Sejf jest zamkniety - najpierw: sudo sejf"; exit 1; }
+MNT=/mnt/kopia; REPO=$MNT/kopia-serwera; PASS=/srv/sejf/.kopia-haslo
+
+echo "=== 1/5 Szukam dysku USB ==="
+DEV=$(lsblk -prno NAME,TRAN,TYPE | awk '$2=="usb"&&$3=="disk"{print $1}' | head -1)
+[ -n "$DEV" ] || { echo "Nie widze dysku USB. Podlacz dysk do serwera i uruchom ponownie."; exit 1; }
+PART=$(lsblk -prno NAME,FSTYPE "$DEV" | awk '$2=="ntfs"{print $1}' | head -1)
+[ -n "$PART" ] || { echo "Na dysku $DEV nie ma partycji NTFS. Zrob zdjecie:"; lsblk -o NAME,SIZE,FSTYPE,LABEL "$DEV"; exit 1; }
+UUID=$(blkid -s UUID -o value "$PART"); LABEL=$(blkid -s LABEL -o value "$PART")
+echo "Znalazlem: $PART  etykieta: ${LABEL:-brak}  rozmiar: $(lsblk -dno SIZE "$DEV")"
+echo "Dane na dysku (np. OneDrive-kopia) zostaja nietkniete."
+echo "Wpisz  TAK  i Enter, aby uzyc tego dysku na kopie:"
+read -r A; [ "$A" = "TAK" ] || { echo "Przerwano."; exit 0; }
+
+echo
+echo "=== 2/5 Instaluje programy i podlaczam dysk na stale ==="
+DEBIAN_FRONTEND=noninteractive apt-get install -y -q restic ntfs-3g >/dev/null 2>&1
+command -v restic >/dev/null || { echo "BLAD instalacji restic"; exit 1; }
+mkdir -p $MNT
+sed -i "\#[[:space:]]$MNT[[:space:]]#d" /etc/fstab
+echo "UUID=$UUID $MNT ntfs3 defaults,nofail,noatime,uid=0,gid=0,umask=077,x-systemd.device-timeout=15 0 0" >> /etc/fstab
+systemctl daemon-reload
+mountpoint -q $MNT || mount $MNT 2>/dev/null || { ntfsfix -d "$PART" >/dev/null 2>&1; mount $MNT; }
+mountpoint -q $MNT || { echo "Nie udalo sie podlaczyc dysku. Zrob zdjecie:"; dmesg | tail -5; exit 1; }
+df -h $MNT | awk 'NR==2{print "Dysk podlaczony w " $6 ": " $2 ", wolne " $4}'
+
+echo
+echo "=== 3/5 Haslo do kopii ==="
+if [ ! -s "$PASS" ]; then
+  echo "Wymysl HASLO DO KOPII (tylko litery i cyfry, min. 16 znakow)."
+  echo "ZAPISZ JE W mSecure jako: Kopia serwera - restic. Bez niego kopii nie da sie odczytac,"
+  echo "gdyby serwer kiedys padl. Podczas pisania nic sie nie wyswietla."
+  while :; do
+    read -rs -p "Haslo: " P1; echo; read -rs -p "Powtorz: " P2; echo
+    [ ${#P1} -ge 16 ] && [ "$P1" = "$P2" ] && break
+    echo "Hasla rozne albo za krotkie - jeszcze raz."
+  done
+  umask 077; printf '%s' "$P1" > "$PASS"; unset P1 P2
+fi
+export RESTIC_PASSWORD_FILE=$PASS
+if [ ! -f "$REPO/config" ]; then restic init -r "$REPO" >/dev/null && echo "Utworzono zaszyfrowane archiwum kopii."; else echo "Archiwum kopii juz istnieje."; fi
+restic -r "$REPO" cat config >/dev/null 2>&1 || { echo "BLAD: haslo nie pasuje do istniejacego archiwum."; exit 1; }
+
+echo
+echo "=== 4/5 Kopia co noc o 2:30 ==="
+cat > /usr/local/sbin/kopia-serwera <<'X'
+#!/bin/bash
+# Zaszyfrowana kopia: folder firmowy + zdjecia z telefonow -> dysk USB.
+export LC_ALL=C RESTIC_PASSWORD_FILE=/srv/sejf/.kopia-haslo
+REPO=/mnt/kopia/kopia-serwera; LOG=/var/log/kopia-serwera.log; ST=/var/lib/kopia-serwera.status
+exec 9>/run/kopia-serwera.lock; flock -n 9 || exit 0
+say(){ echo "$(date '+%F %T') $*" >> $LOG; }
+mountpoint -q /srv/sejf || { say "POMINIETO: sejf zamkniety"; echo "POMINIETO $(date '+%F %T') - sejf zamkniety" > $ST; exit 0; }
+mountpoint -q /mnt/kopia || mount /mnt/kopia 2>/dev/null
+[ -f $REPO/config ] || { say "BLAD: brak dysku kopii"; echo "BLAD $(date '+%F %T') - dysk kopii niepodlaczony" > $ST; exit 1; }
+say "start"
+if nice -n 10 ionice -c3 restic -r $REPO backup /srv/sejf/firma /srv/sejf/telefony \
+     --exclude /srv/sejf/firma/Kosz --exclude-caches --host serwer --tag noc >> $LOG 2>&1; then
+  restic -r $REPO forget --host serwer --keep-daily 14 --keep-weekly 8 --keep-monthly 24 $( [ "$(date +%u)" = 7 ] && echo --prune ) >> $LOG 2>&1
+  [ "$(date +%d)" = 01 ] && restic -r $REPO check --read-data-subset=3% >> $LOG 2>&1
+  echo "OK $(date '+%F %T')" > $ST; say "OK"
+else
+  echo "BLAD $(date '+%F %T') - szczegoly: sudo tail -30 $LOG" > $ST; say "BLAD"
+fi
+X
+chmod 755 /usr/local/sbin/kopia-serwera
+cat > /usr/local/sbin/kopia-status <<'X'
+#!/bin/bash
+# Pokazuje stan kopii zapasowej.  Uzycie: sudo kopia-status
+export RESTIC_PASSWORD_FILE=/srv/sejf/.kopia-haslo
+echo "Ostatnia kopia: $(cat /var/lib/kopia-serwera.status 2>/dev/null || echo 'jeszcze nie bylo')"
+pgrep -f "restic -r /mnt/kopia" >/dev/null && echo "Kopia jest WLASNIE W TOKU."
+df -h /mnt/kopia 2>/dev/null | awk 'NR==2{print "Dysk kopii: " $2 ", wolne " $4}'
+mountpoint -q /srv/sejf && ! pgrep -f "restic -r /mnt/kopia" >/dev/null && { echo; echo "Zapisane kopie (najnowsze na dole):"; restic -r /mnt/kopia/kopia-serwera snapshots --compact 2>/dev/null | tail -8; }
+X
+chmod 755 /usr/local/sbin/kopia-status
+echo "30 2 * * * root /usr/local/sbin/kopia-serwera" > /etc/cron.d/kopia-serwera
+echo OK
+
+echo
+echo "=== 5/5 Pierwsza kopia - startuje w tle ==="
+nohup /usr/local/sbin/kopia-serwera >/dev/null 2>&1 &
+sleep 3
+echo "Pierwsza kopia trwa w tle (moze potrwac kilka godzin). Mozesz zamknac to okno."
+echo "Stan sprawdzisz w kazdej chwili poleceniem:   sudo kopia-status"
+echo
+echo "GOTOWE."
