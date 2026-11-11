@@ -45,15 +45,15 @@ fi
 echo
 echo "=== 3/5 Haslo do kopii ==="
 if [ ! -s "$PASS" ]; then
-  echo "Wymysl HASLO DO KOPII (tylko litery i cyfry, min. 16 znakow)."
-  echo "ZAPISZ JE W mSecure jako: Kopia serwera - restic. Bez niego kopii nie da sie odczytac,"
-  echo "gdyby serwer kiedys padl. Podczas pisania nic sie nie wyswietla."
-  while :; do
-    read -rs -p "Haslo: " P1; echo; read -rs -p "Powtorz: " P2; echo
-    [ ${#P1} -ge 16 ] && [ "$P1" = "$P2" ] && break
-    echo "Hasla rozne albo za krotkie - jeszcze raz."
-  done
-  umask 077; printf '%s' "$P1" > "$PASS"; unset P1 P2
+  P1=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)
+  echo "Serwer wymyslil HASLO DO KOPII (20 liter i cyfr):"
+  echo
+  echo "        $P1"
+  echo
+  echo "Zaznacz je myszka, kliknij prawym przyciskiem (skopiuje sie) i ZAPISZ W mSecure"
+  echo "jako: Kopia serwera - restic. Bez niego kopii nie da sie odczytac, gdyby serwer padl."
+  while :; do read -r -p "Gdy zapiszesz, wpisz  ZAPISALEM  i Enter: " A; [ "$A" = "ZAPISALEM" ] && break; done
+  umask 077; printf '%s' "$P1" > "$PASS"; unset P1
 fi
 export RESTIC_PASSWORD_FILE=$PASS
 if [ ! -f "$REPO/config" ]; then restic init -r "$REPO" >/dev/null && echo "Utworzono zaszyfrowane archiwum kopii."; else echo "Archiwum kopii juz istnieje."; fi
