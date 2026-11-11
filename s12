@@ -25,11 +25,22 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -q restic ntfs-3g >/dev/null 2
 command -v restic >/dev/null || { echo "BLAD instalacji restic"; exit 1; }
 mkdir -p $MNT
 sed -i "\#[[:space:]]$MNT[[:space:]]#d" /etc/fstab
-echo "UUID=$UUID $MNT ntfs3 defaults,nofail,noatime,uid=0,gid=0,umask=077,x-systemd.device-timeout=15 0 0" >> /etc/fstab
+echo "UUID=$UUID $MNT ntfs3 defaults,nofail,noatime,uid=0,gid=$(getent group firma | cut -d: -f3),umask=027,x-systemd.device-timeout=15 0 0" >> /etc/fstab
 systemctl daemon-reload
 mountpoint -q $MNT || mount $MNT 2>/dev/null || { ntfsfix -d "$PART" >/dev/null 2>&1; mount $MNT; }
 mountpoint -q $MNT || { echo "Nie udalo sie podlaczyc dysku. Zrob zdjecie:"; dmesg | tail -5; exit 1; }
 df -h $MNT | awk 'NR==2{print "Dysk podlaczony w " $6 ": " $2 ", wolne " $4}'
+if [ -d $MNT/OneDrive-kopia ] && ! grep -q '^\[Archiwum\]' /etc/samba/smb.conf; then
+cat >> /etc/samba/smb.conf <<X
+
+[Archiwum]
+   path = $MNT/OneDrive-kopia
+   valid users = @firma
+   read only = yes
+X
+systemctl reload smbd
+echo "Zdjecia z OneDrive widoczne z komputerow: \\\\192.168.10.100\\Archiwum (tylko odczyt)"
+fi
 
 echo
 echo "=== 3/5 Haslo do kopii ==="
