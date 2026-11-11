@@ -84,7 +84,13 @@ class H(BaseHTTPRequestHandler):
             c = db(app)
             seq = c.execute("SELECT v FROM meta WHERE k='seq'").fetchone()[0]
             rows = c.execute("SELECT k,rev,seq,deleted,v FROM docs WHERE seq>? ORDER BY seq", (since,)).fetchall()
-        self.out(200, {"seq": seq, "docs": [{"k": k, "rev": rv, "deleted": bool(d), "v": (None if d else json.loads(v))} for k, rv, s, d, v in rows]})
+        out, size, more, nxt = [], 0, False, seq
+        for k, rv, s, d, v in rows:
+            if out and size + len(v or "") > 4000000:
+                more, nxt = True, out[-1]["_s"]; break
+            out.append({"k": k, "rev": rv, "deleted": bool(d), "v": (None if d else json.loads(v)), "_s": s}); size += len(v or "")
+        for o in out: o.pop("_s", None)
+        self.out(200, {"seq": seq, "docs": out, "more": more, "next": nxt})
     def do_POST(self):
         r = self.check()
         if not r: return

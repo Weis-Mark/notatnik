@@ -1188,11 +1188,21 @@ async function syFetch(path,body){
   const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),body?120000:30000);
   try{
     const r=await fetch(u,{method:body?"POST":"GET",headers:{"X-Klucz":settings.sync.key,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined,signal:ctl.signal,cache:"no-store"});
-    const j=await r.json().catch(()=>({}));
+    let j;try{j=await r.json();}catch(e){if(!r.ok)j={};else throw new Error("połączenie przerwane w trakcie przesyłania – spróbuj ponownie");}
     if(!r.ok)throw new Error(r.status===401?"zły klucz synchronizacji":r.status===503?"sejf na serwerze jest zamknięty":(j.error||("błąd "+r.status)));
     return j;
   }catch(e){if(e.name==="AbortError")throw new Error("serwer nie odpowiada");if(e instanceof TypeError)throw new Error("brak połączenia z serwerem (włącz Tailscale)");throw e;}
   finally{clearTimeout(t);}
+}
+async function syPullAll(since){
+  const docs=[];let from=since,top=since;
+  for(let i=0;i<10000;i++){
+    const r=await syFetch("pull?since="+from);
+    if(!r||!Array.isArray(r.docs))throw new Error("niepełna odpowiedź serwera");
+    docs.push(...r.docs);top=r.seq;
+    if(!r.more)break;from=r.next;
+  }
+  return {seq:top,docs};
 }
 function secDoc(s){return s.enc?{enc:s.enc}:{pages:s.pages||[]};}
 function samePage(a,b){return a.title===b.title&&a.html===b.html;}
@@ -1277,7 +1287,7 @@ async function syncNow(manual){
   try{
     await doSave();
     const first=!sy.seq&&!Object.keys(sy.revs).length;
-    let pulled=await syFetch("pull?since="+sy.seq);
+    let pulled=await syPullAll(sy.seq);
     let docs=pulled.docs.filter(d=>(sy.revs[d.k]||0)<d.rev);
     if(first&&docs.length){
       const rep=confirm("Na serwerze są już notatki z innego urządzenia.\n\nOK = ZASTĄP notatki na tym urządzeniu wersją z serwera (zalecane, gdy to drugie urządzenie).\nAnuluj = POŁĄCZ notatki z obu miejsc.");
