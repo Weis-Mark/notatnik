@@ -1,0 +1,43 @@
+#!/bin/bash
+# Folder "Wymiana": S:\Wymiana  <->  folder Wymiana w telefonach (Syncthing, w obie strony).
+# Uruchomienie na serwerze:  sudo bash s13
+export LC_ALL=C
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s13"; exit 1; fi
+mountpoint -q /srv/sejf || { echo "Sejf jest zamkniety - najpierw: sudo sejf"; exit 1; }
+[ -x /usr/local/sbin/telefony ] || { echo "Najpierw musi byc zrobiony krok s11 (Syncthing)."; exit 1; }
+W=/srv/sejf/firma/Wymiana
+mkdir -p "$W" /srv/sejf/firma/Kosz/Wymiana
+chown weiser:firma "$W" /srv/sejf/firma/Kosz/Wymiana; chmod 2770 "$W" /srv/sejf/firma/Kosz/Wymiana
+printf '(?d)~$*\n(?d).~lock.*\n(?d)Thumbs.db\n(?d)desktop.ini\n(?d)*.tmp\n' > "$W/.stignore"; chown weiser:firma "$W/.stignore"
+
+cat > /usr/local/sbin/wymiana <<'PY'
+#!/usr/bin/env python3
+# Udostepnia folder Wymiana wszystkim telefonom dodanym do Syncthing (mozna uruchamiac wielokrotnie).
+import glob, json, re, sys, time, urllib.request
+cfgs = glob.glob('/home/weiser/.local/state/syncthing/config.xml') + glob.glob('/home/weiser/.config/syncthing/config.xml')
+key = re.search(r'<apikey>([^<]+)</apikey>', open(cfgs[0]).read()).group(1)
+def api(path, data=None, method=None):
+    req = urllib.request.Request('http://127.0.0.1:8384/rest/' + path, method=method or ('POST' if data is not None else 'GET'),
+        data=None if data is None else json.dumps(data).encode(), headers={'X-API-Key': key, 'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        b = r.read(); return json.loads(b) if b.strip() else None
+for i in range(30):
+    try: me = api('system/status')['myID']; break
+    except Exception: time.sleep(2)
+else: sys.exit("Syncthing nie odpowiada.")
+devs = [d for d in api('config/devices') if d['deviceID'] != me]
+folders = {f['id']: f for f in api('config/folders')}
+f = folders.get('wymiana') or api('config/defaults/folder')
+f.update(id='wymiana', label='Wymiana', path='/srv/sejf/firma/Wymiana', type='sendreceive', ignoreDelete=False,
+         versioning={'type': 'trashcan', 'params': {'cleanoutDays': '30'}, 'fsPath': '/srv/sejf/firma/Kosz/Wymiana', 'fsType': 'basic',
+                     'cleanupIntervalS': 3600})
+have = {d['deviceID'] for d in f.get('devices', [])}
+f['devices'] = f.get('devices', []) + [{'deviceID': x} for x in [me] + [d['deviceID'] for d in devs] if x not in have]
+api('config/folders', f)
+print("Folder Wymiana udostepniony dla: " + (", ".join(d['name'] for d in devs) or "(brak telefonow)"))
+PY
+chmod 755 /usr/local/sbin/wymiana
+grep -q "/usr/local/sbin/wymiana" /usr/local/sbin/telefony || printf '\nimport subprocess\nsubprocess.run(["/usr/local/sbin/wymiana"])\n' >> /usr/local/sbin/telefony
+/usr/local/sbin/wymiana || exit 1
+echo
+echo "GOTOWE. Na komputerze: S:\\Wymiana.  Teraz zaakceptuj folder w telefonie (instrukcja od Claude)."
