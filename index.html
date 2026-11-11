@@ -65,6 +65,9 @@ main{flex:1;display:flex;min-height:0;position:relative}
 .pitem small{color:var(--muted);font-weight:400;font-size:11.5px}
 .addrow{margin:6px;border:1px dashed var(--line)}
 .back{display:none}
+#syncBtn.err{color:#e5484d}
+#syncBtn.spin{animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
 #toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 14px;z-index:99;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none;opacity:0;transition:opacity .25s}
 #toast.on{opacity:1}
 .fs{position:absolute;right:0;width:40px;pointer-events:none;z-index:5;display:none}
@@ -161,6 +164,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
 <header>
   <span class="brand">📝 Notatnik</span>
   <div class="search"><input id="q" type="search" placeholder="Szukaj…  (Ctrl+F)" autocomplete="off"></div>
+  <button id="syncBtn" class="hidden" title="Synchronizacja z serwerem">⇅</button>
   <button id="softRef" title="Odśwież widok (działa bez internetu)">↺</button>
   <button id="hardRef" title="Pełne odświeżenie – pobierz najnowszą wersję (wymaga internetu)">🔄</button>
   <button id="appMore" title="Ustawienia">⚙</button>
@@ -310,6 +314,7 @@ async function load(){
   try{db=await idbOpen();}catch(e){db=null;}
   if(db){
     const all=await idbAll();
+    if(all.sync)sy=Object.assign(sy,all.sync);
     if(all.meta){
       state={version:2,notebooks:all.meta.notebooks.map(n=>({id:n.id,name:n.name,sections:n.sections.map(s=>{
         const r=all["sec:"+s.id]||{};return {id:s.id,name:s.name,color:s.color,enc:r.enc||null,pages:r.enc?null:(r.pages||[])};
@@ -364,6 +369,7 @@ async function doSave(){
         for(const id of [...dirtySecs]){const s=findSec(id);if(s)puts.push(["sec:"+id,s.enc?{enc:s.enc}:{pages:s.pages||[]}]);}
         const dels=[...delSecs].map(id=>"sec:"+id);
         dirtySecs.clear();delSecs.clear();
+        syTrack(puts,dels);
         await idbWrite(puts,dels);
       }else{
         state.ui={nb:ui.nb,sec:ui.sec,page:ui.page};
@@ -615,6 +621,7 @@ function nbMenu(){
 function appMenu(){
   const tn={auto:"jak w systemie",dark:"ciemny",light:"jasny"};
   menu("Ustawienia",[
+    {label:"⇅ Synchronizacja z serwerem domowym"+(syOn()?" (włączona)":" (wyłączona)")+"…",fn:syncSettings},
     {label:"⬇ Pobierz kopię zapasową (plik)",fn:exportData},
     {label:"⬆ Wczytaj kopię zapasową…",fn:()=>$("#file").click()},
     {label:"🔒 Zablokuj wszystkie chronione zakładki",fn:lockAll},
@@ -1157,9 +1164,193 @@ async function hardRefresh(){
 $("#softRef").onclick=softRefresh;
 $("#hardRef").onclick=hardRefresh;
 
+/* ---------- synchronizacja z serwerem domowym ---------- */
+let sy={seq:0,revs:{},pend:{},ctr:0,lastMeta:"",last:0};
+let syBusy=false,syTimer=null,syErr="";
+const syOn=()=>!!(settings.sync&&settings.sync.on&&settings.sync.url&&settings.sync.key&&db);
+function syncMetaOf(){return {notebooks:state.notebooks.map(n=>({id:n.id,name:n.name,sections:n.sections.map(s=>({id:s.id,name:s.name,color:s.color}))}))};}
+function syMark(k,v){sy.pend[k]=v==="del"?"del:"+(++sy.ctr):++sy.ctr;}
+function syIsDel(k){return typeof sy.pend[k]==="string";}
+/* wywolywane z doSave: zapamietaj, co zmienilo sie lokalnie */
+function syTrack(puts,dels){
+  if(!syOn())return;
+  for(const [k] of puts)if(k.startsWith("sec:"))syMark(k);
+  for(const k of dels)syMark(k,"del");
+  const m=JSON.stringify(syncMetaOf());if(m!==sy.lastMeta){syMark("meta");sy.lastMeta=m;}
+  puts.push(["sync",sy]);
+  clearTimeout(syTimer);syTimer=setTimeout(()=>syncNow(false),8000);
+}
+function syMarkAll(){
+  state.notebooks.forEach(n=>n.sections.forEach(s=>syMark("sec:"+s.id)));syMark("meta");sy.lastMeta=JSON.stringify(syncMetaOf());
+}
+async function syFetch(path,body){
+  const u=settings.sync.url.replace(/\/+$/,"")+"/api/notatnik/"+path;
+  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),body?120000:30000);
+  try{
+    const r=await fetch(u,{method:body?"POST":"GET",headers:{"X-Klucz":settings.sync.key,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined,signal:ctl.signal,cache:"no-store"});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(r.status===401?"zły klucz synchronizacji":r.status===503?"sejf na serwerze jest zamknięty":(j.error||("błąd "+r.status)));
+    return j;
+  }catch(e){if(e.name==="AbortError")throw new Error("serwer nie odpowiada");if(e instanceof TypeError)throw new Error("brak połączenia z serwerem (włącz Tailscale)");throw e;}
+  finally{clearTimeout(t);}
+}
+function secDoc(s){return s.enc?{enc:s.enc}:{pages:s.pages||[]};}
+function samePage(a,b){return a.title===b.title&&a.html===b.html;}
+/* scalanie dwóch wersji tej samej zakładki (zmiany na obu urządzeniach) */
+function mergePages(loc,rem){
+  const out=[],seen=new Set(),lm=new Map(loc.map(p=>[p.id,p]));
+  for(const r of rem){
+    const l=lm.get(r.id);seen.add(r.id);
+    if(!l){out.push(r);continue;}
+    if(samePage(l,r)){out.push((l.updated||0)>=(r.updated||0)?l:r);continue;}
+    const [nw,old]=(l.updated||0)>=(r.updated||0)?[l,r]:[r,l];
+    out.push(nw,Object.assign({},old,{id:uid(),title:(old.title||"")+" (konflikt – starsza wersja)"}));
+  }
+  for(const l of loc)if(!seen.has(l.id))out.push(l);
+  return out;
+}
+function syRemoveSec(id){for(const nb of state.notebooks){const i=nb.sections.findIndex(s=>s.id===id);if(i>=0){nb.sections.splice(i,1);delete mem.unlocked[id];mem.dirtyEnc.delete(id);}}}
+/* zastosuj zmiany z serwera; zwraca listy zmienionych/usunietych zakladek */
+function syApply(docs){
+  const changed=new Set(),removed=new Set();
+  const byK=new Map();for(const d of docs)byK.set(d.k,d);
+  // 1) konflikty zakladek: lokalne usuniecie + zdalna zmiana => zachowaj zdalna
+  for(const d of docs)if(d.k.startsWith("sec:")&&!d.deleted&&syIsDel(d.k))delete sy.pend[d.k];
+  // 2) struktura notesow
+  const md=byK.get("meta");
+  if(md&&!md.deleted){
+    const rm=md.v,local=new Map();state.notebooks.forEach(n=>n.sections.forEach(s=>local.set(s.id,s)));
+    const used=new Set();
+    const nbs=rm.notebooks.map(n=>({id:n.id,name:n.name,sections:n.sections.filter(s=>!syIsDel("sec:"+s.id)).map(s=>{
+      used.add(s.id);const l=local.get(s.id);
+      if(l){l.name=s.name;l.color=s.color;return l;}
+      changed.add(s.id);return {id:s.id,name:s.name,color:s.color,enc:null,pages:[]};
+    })}));
+    if(sy.pend.meta!==undefined){ // zmiany po obu stronach: dolacz lokalne nowosci
+      for(const n of state.notebooks){
+        const keep=n.sections.filter(s=>!used.has(s.id)&&sy.pend["sec:"+s.id]!==undefined&&!syIsDel("sec:"+s.id));
+        let t=nbs.find(x=>x.id===n.id);
+        if(!t&&(keep.length||!n.sections.length)){t={id:n.id,name:n.name,sections:[]};nbs.push(t);}
+        if(t)keep.forEach(s=>{t.sections.push(s);used.add(s.id);});
+      }
+    }
+    for(const id of local.keys())if(!used.has(id)){removed.add(id);delete mem.unlocked[id];mem.dirtyEnc.delete(id);}
+    state.notebooks=nbs.length?nbs:state.notebooks;
+  }
+  // 3) tresc zakladek
+  for(const d of docs){
+    if(!d.k.startsWith("sec:"))continue;
+    const id=d.k.slice(4),s=findSec(id),mine=sy.pend[d.k]!==undefined&&!syIsDel(d.k);
+    if(d.deleted){if(!mine&&s){syRemoveSec(id);removed.add(id);}continue;}
+    if(!s)continue;
+    const v=d.v||{};
+    if(mine){
+      const lp=pagesOf(s);
+      if(!s.enc&&!v.enc&&lp){s.pages=mergePages(lp,v.pages||[]);}
+      else if(JSON.stringify(secDoc(s))!==JSON.stringify(v)){ // zaszyfrowane: zachowaj obie wersje
+        const nb=state.notebooks.find(n=>n.sections.includes(s));
+        const c={id:uid(),name:s.name+" (wersja z innego urządzenia)",color:s.color,enc:v.enc||null,pages:v.enc?null:(v.pages||[])};
+        nb.sections.splice(nb.sections.indexOf(s)+1,0,c);syMark("sec:"+c.id);syMark("meta");changed.add(c.id);
+      }
+      syMark(d.k);changed.add(id);
+    }else{
+      s.enc=v.enc||null;s.pages=v.enc?null:(v.pages||[]);delete mem.unlocked[id];mem.dirtyEnc.delete(id);changed.add(id);
+    }
+  }
+  return {changed,removed};
+}
+async function syPersist(changed,removed){
+  const puts=[["meta",metaOf()]],dels=[];
+  for(const id of changed){const s=findSec(id);if(s)puts.push(["sec:"+id,secDoc(s)]);}
+  for(const id of removed)if(!findSec(id))dels.push("sec:"+id);
+  puts.push(["sync",sy]);
+  await idbWrite(puts,dels);
+}
+function syUi(t,err){
+  const b=$("#syncBtn");if(!b)return;
+  b.classList.toggle("hidden",!syOn());b.classList.toggle("err",!!err);
+  b.title="Synchronizacja z serwerem: "+t;
+}
+async function syncNow(manual){
+  if(!syOn()){if(manual)syncSettings();return;}
+  if(syBusy)return;syBusy=true;syUi("trwa…");$("#syncBtn").classList.add("spin");
+  try{
+    await doSave();
+    const first=!sy.seq&&!Object.keys(sy.revs).length;
+    let pulled=await syFetch("pull?since="+sy.seq);
+    let docs=pulled.docs.filter(d=>(sy.revs[d.k]||0)<d.rev);
+    if(first&&docs.length){
+      const rep=confirm("Na serwerze są już notatki z innego urządzenia.\n\nOK = ZASTĄP notatki na tym urządzeniu wersją z serwera (zalecane, gdy to drugie urządzenie).\nAnuluj = POŁĄCZ notatki z obu miejsc.");
+      if(rep){
+        const metaD=docs.find(d=>d.k==="meta");if(!metaD)throw new Error("niepełne dane na serwerze");
+        const secs=new Map(docs.filter(d=>d.k.startsWith("sec:")&&!d.deleted).map(d=>[d.k.slice(4),d.v]));
+        state={version:2,notebooks:metaD.v.notebooks.map(n=>({id:n.id,name:n.name,sections:n.sections.map(s=>{const v=secs.get(s.id)||{};return {id:s.id,name:s.name,color:s.color,enc:v.enc||null,pages:v.enc?null:(v.pages||[])};})}))};
+        mem={unlocked:{},dirtyEnc:new Set()};sy.pend={};
+        await idbClear();
+        for(const d of docs)sy.revs[d.k]=d.rev;
+        sy.seq=pulled.seq;sy.lastMeta=JSON.stringify(syncMetaOf());
+        dirtySecs.clear();delSecs.clear();markAllDirty();
+        await (async()=>{const puts=[["meta",metaOf()],["sync",sy]];state.notebooks.forEach(n=>n.sections.forEach(s=>puts.push(["sec:"+s.id,secDoc(s)])));await idbWrite(puts,[]);})();
+        dirtySecs.clear();
+        fixUi();render();warmCache();
+        sy.last=Date.now();syUi("zsynchronizowano "+new Date().toLocaleTimeString("pl-PL"));toast("✓ Notatki pobrane z serwera");return;
+      }
+      syMarkAll();
+    }else if(first){syMarkAll();}
+    for(let round=0;round<4;round++){
+      if(docs.length){
+        const {changed,removed}=syApply(docs);
+        for(const d of docs)sy.revs[d.k]=d.rev;
+        fixUi();await syPersist(changed,removed);render();
+      }
+      sy.seq=Math.max(sy.seq,pulled.seq||0);
+      // wysylka lokalnych zmian (w paczkach)
+      const keys=Object.keys(sy.pend);if(!keys.length)break;
+      const conf=[];let batch=[],size=0,snap={};
+      const flush=async()=>{
+        if(!batch.length)return;
+        const r=await syFetch("push",{docs:batch});
+        for(const o of r.ok){sy.revs[o.k]=o.rev;if(sy.pend[o.k]===snap[o.k])delete sy.pend[o.k];}
+        conf.push(...r.conflicts);batch=[];size=0;
+      };
+      for(const k of keys){
+        snap[k]=sy.pend[k];let d;
+        if(syIsDel(k))d={k,base:sy.revs[k]||0,deleted:true};
+        else if(k==="meta")d={k,base:sy.revs[k]||0,v:syncMetaOf()};
+        else{const s=findSec(k.slice(4));if(!s){delete sy.pend[k];continue;}d={k,base:sy.revs[k]||0,v:secDoc(s)};}
+        const n=JSON.stringify(d).length;if(size+n>8e6)await flush();batch.push(d);size+=n;
+      }
+      await flush();
+      sy.lastMeta=JSON.stringify(syncMetaOf());
+      await idbWrite([["sync",sy]],[]);
+      if(!conf.length)break;
+      docs=conf.map(c=>({k:c.k,rev:c.rev,deleted:c.deleted,v:c.v}));pulled={seq:0};
+    }
+    sy.last=Date.now();await idbWrite([["sync",sy]],[]);
+    syUi("zsynchronizowano "+new Date().toLocaleTimeString("pl-PL"));syErr="";
+    if(manual)toast("✓ Zsynchronizowano z serwerem");
+  }catch(e){
+    syErr=e.message;syUi("błąd – "+e.message,true);
+    if(manual)alert("Synchronizacja nie powiodła się: "+e.message);
+  }finally{syBusy=false;const b=$("#syncBtn");if(b)b.classList.remove("spin");}
+}
+async function syncSettings(){
+  const s=settings.sync||{};
+  const r=await form("Synchronizacja z serwerem domowym",[
+    {k:"url",label:"Adres serwera",value:s.url||"https://serwer.tail51ec1c.ts.net"},
+    {k:"key",label:"Klucz synchronizacji (z pliku S:\\klucz-synchronizacji.txt)",value:s.key||""}],
+    "Działa, gdy na tym urządzeniu jest włączony Tailscale. Notatki zostają też na urządzeniu, więc bez połączenia wszystko działa normalnie, a zsynchronizuje się później. Pozostaw klucz pusty, aby wyłączyć synchronizację.");
+  if(!r)return;
+  const key=r.key.trim(),url=r.url.trim();
+  settings.sync={url,key,on:!!(url&&key)};saveSettings();syUi("…");
+  if(settings.sync.on)syncNow(true);
+}
+setInterval(()=>{if(document.visibilityState==="visible"&&syOn())syncNow(false);},120000);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&syOn()&&Date.now()-sy.last>30000)syncNow(false);});
+
 /* ---------- start ---------- */
 applyTheme();applyFocus();applyFs();setStatus("Wczytywanie…");
-load().then(()=>{render();warmCache();setView(curPage()?"editor":(curSec()?"pages":"sections"));setTimeout(revealActive,60);setStatus("");
+load().then(()=>{$("#syncBtn").onclick=()=>syncNow(true);syUi(sy.last?"ostatnio "+new Date(sy.last).toLocaleString("pl-PL"):"jeszcze nie było");if(syOn())setTimeout(()=>syncNow(false),1500);render();warmCache();setView(curPage()?"editor":(curSec()?"pages":"sections"));setTimeout(revealActive,60);setStatus("");
   if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 }).catch(e=>{alert("Błąd wczytywania notatek: "+e.message);});
 </script>

@@ -1,0 +1,164 @@
+#!/bin/bash
+# Serwer synchronizacji Notatnika i Slownika (dostep tylko przez Tailscale, HTTPS).
+# Uruchomienie na serwerze:  sudo bash s14
+export LC_ALL=C
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s14"; exit 1; fi
+mountpoint -q /srv/sejf || { echo "Sejf jest zamkniety - najpierw: sudo sejf"; exit 1; }
+command -v tailscale >/dev/null || { echo "Najpierw krok s10 (Tailscale)."; exit 1; }
+D=/srv/sejf/aplikacje
+
+echo "=== 1/4 Program synchronizacji ==="
+mkdir -p $D && chown weiser:weiser $D && chmod 700 $D
+if [ ! -s $D/klucz ]; then
+  tr -dc 'a-z0-9' </dev/urandom | head -c 20 > $D/klucz; chown weiser:weiser $D/klucz; chmod 600 $D/klucz
+fi
+cat > /usr/local/lib/sync-serwer.py <<'PY'
+#!/usr/bin/env python3
+# Serwer synchronizacji dla aplikacji Notatnik i Slownik.
+# Dane: /srv/sejf/aplikacje/<aplikacja>.sqlite (w zaszyfrowanym sejfie).
+import json, os, sqlite3, threading, time, hmac, sys
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
+
+DIR = os.environ.get("SYNC_DIR", "/srv/sejf/aplikacje")
+PORT = int(os.environ.get("SYNC_PORT", "8095"))
+APPS = {"notatnik", "slownik"}
+ORIGINS = {"https://weis-mark.github.io"} | set(filter(None, os.environ.get("SYNC_ORIGINS", "").split(",")))
+LOCK = threading.Lock()
+MAXBODY = 200 * 1024 * 1024
+
+def key():
+    try: return open(os.path.join(DIR, "klucz")).read().strip()
+    except Exception: return None
+
+_db = {}
+def db(app):
+    c = _db.get(app)
+    if c is None:
+        c = sqlite3.connect(os.path.join(DIR, app + ".sqlite"), check_same_thread=False)
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("CREATE TABLE IF NOT EXISTS docs(k TEXT PRIMARY KEY, rev INTEGER, seq INTEGER, deleted INTEGER, updated REAL, v TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v INTEGER)")
+        c.execute("INSERT OR IGNORE INTO meta VALUES('seq',0)")
+        c.commit(); _db[app] = c
+    return c
+
+class H(BaseHTTPRequestHandler):
+    server_version = "sync/1"
+    def log_message(self, *a): pass
+    def cors(self):
+        o = self.headers.get("Origin")
+        if o in ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", o)
+            self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Klucz")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Access-Control-Max-Age", "600")
+    def out(self, code, obj):
+        b = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(code); self.cors()
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store")
+        self.end_headers(); self.wfile.write(b)
+    def do_OPTIONS(self):
+        self.send_response(204); self.cors(); self.send_header("Content-Length", "0"); self.end_headers()
+    def check(self):
+        p = urlparse(self.path); parts = p.path.strip("/").split("/")
+        if len(parts) != 3 or parts[0] != "api" or parts[1] not in APPS:
+            self.out(404, {"error": "nie ma takiego adresu"}); return None
+        if not os.path.ismount("/srv/sejf") and DIR.startswith("/srv/sejf"):
+            self.out(503, {"error": "sejf zamkniety"}); return None
+        k = key()
+        if not k or not hmac.compare_digest(self.headers.get("X-Klucz", ""), k):
+            self.out(401, {"error": "zly klucz"}); return None
+        return parts[1], parts[2], parse_qs(p.query)
+    def do_GET(self):
+        r = self.check()
+        if not r: return
+        app, op, q = r
+        if op == "ping": return self.out(200, {"ok": True, "app": app})
+        if op != "pull": return self.out(404, {"error": "?"})
+        since = int(q.get("since", ["0"])[0] or 0)
+        with LOCK:
+            c = db(app)
+            seq = c.execute("SELECT v FROM meta WHERE k='seq'").fetchone()[0]
+            rows = c.execute("SELECT k,rev,seq,deleted,v FROM docs WHERE seq>? ORDER BY seq", (since,)).fetchall()
+        self.out(200, {"seq": seq, "docs": [{"k": k, "rev": rv, "deleted": bool(d), "v": (None if d else json.loads(v))} for k, rv, s, d, v in rows]})
+    def do_POST(self):
+        r = self.check()
+        if not r: return
+        app, op, q = r
+        if op != "push": return self.out(404, {"error": "?"})
+        n = int(self.headers.get("Content-Length", "0"))
+        if n > MAXBODY: return self.out(413, {"error": "za duzo danych naraz"})
+        try: body = json.loads(self.rfile.read(n) or b"{}")
+        except Exception: return self.out(400, {"error": "zle dane"})
+        ok, conf = [], []
+        with LOCK:
+            c = db(app)
+            seq = c.execute("SELECT v FROM meta WHERE k='seq'").fetchone()[0]
+            for d in body.get("docs", []):
+                k = d.get("k"); base = d.get("base") or 0
+                if not isinstance(k, str) or not k: continue
+                cur = c.execute("SELECT rev,deleted,v FROM docs WHERE k=?", (k,)).fetchone()
+                currev = cur[0] if cur else 0
+                if currev != base and not d.get("force"):
+                    conf.append({"k": k, "rev": currev, "deleted": bool(cur[1]) if cur else True,
+                                 "v": (json.loads(cur[2]) if cur and not cur[1] else None)})
+                    continue
+                seq += 1; rev = currev + 1
+                dele = 1 if d.get("deleted") else 0
+                v = None if dele else json.dumps(d.get("v"), ensure_ascii=False)
+                c.execute("INSERT OR REPLACE INTO docs VALUES(?,?,?,?,?,?)", (k, rev, seq, dele, time.time(), v))
+                ok.append({"k": k, "rev": rev})
+            c.execute("UPDATE meta SET v=? WHERE k='seq'", (seq,)); c.commit()
+        self.out(200, {"seq": seq, "ok": ok, "conflicts": conf})
+
+if __name__ == "__main__":
+    ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
+PY
+cat > /etc/systemd/system/sync-serwer.service <<'X'
+[Unit]
+Description=Synchronizacja Notatnika i Slownika
+After=network.target
+[Service]
+User=weiser
+ExecStart=/usr/bin/python3 /usr/local/lib/sync-serwer.py
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+X
+systemctl daemon-reload; systemctl enable sync-serwer >/dev/null 2>&1; systemctl restart sync-serwer
+sleep 2
+curl -s -H "X-Klucz: $(cat $D/klucz)" http://127.0.0.1:8095/api/notatnik/ping | grep -q '"ok": true' && echo OK || { echo "BLAD: program nie odpowiada"; journalctl -u sync-serwer -n 5 --no-pager; exit 1; }
+
+echo
+echo "=== 2/4 Sejf: zamykanie/otwieranie uwzglednia synchronizacje ==="
+Z=/usr/local/sbin/sejf-zamknij
+grep -q "sync-serwer" $Z || sed -i 's#^systemctl stop smbd$#systemctl stop smbd sync-serwer syncthing@weiser 2>/dev/null#; s#^systemctl start smbd$#systemctl start smbd sync-serwer syncthing@weiser 2>/dev/null#' $Z
+O=/usr/local/sbin/sejf
+grep -q "sync-serwer" $O || sed -i 's#systemctl restart smbd \&\&#systemctl restart smbd sync-serwer \&\&#' $O
+K=/usr/local/sbin/kopia-serwera
+[ -f $K ] && ! grep -q "/srv/sejf/aplikacje" $K && sed -i 's#/srv/sejf/firma /srv/sejf/telefony#/srv/sejf/firma /srv/sejf/telefony /srv/sejf/aplikacje#' $K
+echo OK
+
+echo
+echo "=== 3/4 Bezpieczny adres HTTPS w Tailscale ==="
+tailscale serve --bg --https=443 http://127.0.0.1:8095 >/tmp/ts-serve.log 2>&1
+if ! tailscale serve status 2>/dev/null | grep -q 8095; then
+  echo "Tailscale prosi o wlaczenie certyfikatow HTTPS:"; cat /tmp/ts-serve.log
+  echo; echo "Otworz powyzszy adres w przegladarce, kliknij Enable, a potem uruchom:  sudo bash s14"; exit 1
+fi
+NAME=$(tailscale status --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')
+echo "OK: https://$NAME"
+
+echo
+echo "=== 4/4 Dane do wpisania w aplikacjach ==="
+cp $D/klucz /srv/sejf/firma/klucz-synchronizacji.txt; chown root:firma /srv/sejf/firma/klucz-synchronizacji.txt; chmod 640 /srv/sejf/firma/klucz-synchronizacji.txt
+echo "Adres serwera:  https://$NAME"
+echo "Klucz:          $(cat $D/klucz)"
+echo "(klucz jest tez w pliku S:\\klucz-synchronizacji.txt - zapisz go w mSecure, potem ten plik usun)"
+echo
+echo "GOTOWE."
