@@ -1247,13 +1247,22 @@ async function syFetch(path,body){
     let j;try{j=await r.json();}catch(e){if(!r.ok)j={};else throw new Error("połączenie przerwane w trakcie przesyłania – spróbuj ponownie");}
     if(!r.ok)throw new Error(r.status===401?"zły klucz synchronizacji":r.status===503?"sejf na serwerze jest zamknięty":(j.error||("błąd "+r.status)));
     return j;
-  }catch(e){if(e.name==="AbortError")throw new Error("serwer nie odpowiada");if(e instanceof TypeError)throw new Error("brak połączenia z serwerem (włącz Tailscale)");throw e;}
+  }catch(e){
+    if(e.name==="AbortError")throw new Error(body?"wysyłanie trwało za długo (słabe połączenie?)":"serwer nie odpowiada");
+    if(e instanceof TypeError){
+      let up=false;
+      if(path!=="ping"){try{const r=await fetch(settings.sync.url.replace(/\/+$/,"")+"/api/notatnik/ping",{headers:{"X-Klucz":settings.sync.key},cache:"no-store"});up=r.ok;}catch(x){}}
+      throw new Error(up?"połączenie zerwało się w trakcie przesyłania danych – spróbuj jeszcze raz":"brak połączenia z serwerem (sprawdź Tailscale)");
+    }
+    throw e;}
   finally{clearTimeout(t);}
 }
 async function syPullAll(since){
   const docs=[];let from=since,top=since;
   for(let i=0;i<10000;i++){
-    const r=await syFetch("pull?since="+from);
+    let r,err;
+    for(let t=0;t<3;t++){try{r=await syFetch("pull?since="+from);break;}catch(e){err=e;await new Promise(z=>setTimeout(z,1500*(t+1)));}}
+    if(!r)throw err;
     if(!r||!Array.isArray(r.docs))throw new Error("niepełna odpowiedź serwera");
     docs.push(...r.docs);top=r.seq;
     if(!r.more)break;from=r.next;
@@ -1375,7 +1384,9 @@ async function syncNow(manual){
       const conf=[];let batch=[],size=0,snap={};
       const flush=async()=>{
         if(!batch.length)return;
-        const r=await syFetch("push",{docs:batch});
+        let r,err;
+        for(let t=0;t<3;t++){try{r=await syFetch("push",{docs:batch});break;}catch(e){err=e;await new Promise(z=>setTimeout(z,1500*(t+1)));}}
+        if(!r)throw err;
         for(const o of r.ok){sy.revs[o.k]=o.rev;if(sy.pend[o.k]===snap[o.k])delete sy.pend[o.k];}
         conf.push(...r.conflicts);batch=[];size=0;
       };
@@ -1384,7 +1395,7 @@ async function syncNow(manual){
         if(syIsDel(k))d={k,base:sy.revs[k]||0,deleted:true};
         else if(k==="meta")d={k,base:sy.revs[k]||0,v:syncMetaOf()};
         else{const s=findSec(k.slice(4));if(!s){delete sy.pend[k];continue;}d={k,base:sy.revs[k]||0,v:secDoc(s)};}
-        const n=JSON.stringify(d).length;if(size+n>8e6)await flush();batch.push(d);size+=n;
+        const n=JSON.stringify(d).length;if(size+n>1.5e6)await flush();batch.push(d);size+=n;
       }
       await flush();
       sy.lastMeta=JSON.stringify(syncMetaOf());
