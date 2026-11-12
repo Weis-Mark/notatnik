@@ -69,6 +69,9 @@ main{flex:1;display:flex;min-height:0;position:relative}
 #syncBtn.err{color:#e5484d}
 #syncBtn.spin{animation:sp 1s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
+.imgview{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;overflow:auto;cursor:zoom-out}
+.imgview img{max-width:100%;max-height:100%;object-fit:contain}
+#body img{cursor:pointer}
 #toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 14px;z-index:99;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none;opacity:0;transition:opacity .25s}
 #toast.on{opacity:1}
 .fs{position:absolute;right:0;width:40px;pointer-events:none;z-index:5;display:none}
@@ -1059,6 +1062,37 @@ $("#body").addEventListener("drop",e=>{
 $("#imgBtn").addEventListener("mousedown",e=>e.preventDefault());
 $("#imgBtn").addEventListener("pointerdown",e=>e.preventDefault());
 $("#imgBtn").onclick=()=>$("#imgPick").click();
+/* --- menu obrazka: kliknij obrazek w notatce --- */
+function imgBlob(img,type){
+  return new Promise((ok,bad)=>{const c=document.createElement("canvas");c.width=img.naturalWidth;c.height=img.naturalHeight;
+    const g=c.getContext("2d");if(type==="image/jpeg"){g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);}
+    g.drawImage(img,0,0);c.toBlob(b=>b?ok(b):bad(new Error("nie udało się odczytać obrazka")),type,0.92);});
+}
+function imgName(img){const d=new Date(),z=n=>String(n).padStart(2,"0");
+  const ext=/^data:image\/png/.test(img.src)?"png":"jpg";
+  return "obrazek-"+d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+"-"+z(d.getHours())+z(d.getMinutes())+z(d.getSeconds())+"."+ext;}
+function imgView(img){
+  const o=document.createElement("div");o.className="imgview";
+  const im=document.createElement("img");im.src=img.src;o.append(im);
+  o.onclick=()=>o.remove();document.body.append(o);
+}
+function imgMenu(img){
+  const opts=[
+    {label:"🔍 Pokaż w pełnym rozmiarze",fn:()=>imgView(img)},
+    {label:"⧉ Kopiuj obrazek",fn:async()=>{
+      try{const b=imgBlob(img,"image/png");await navigator.clipboard.write([new ClipboardItem({"image/png":b})]);toast("✓ Obrazek skopiowany – wklej go np. do Worda albo innej notatki");}
+      catch(e){alert("Nie udało się skopiować obrazka ("+e.message+"). Użyj „Zapisz obrazek jako plik”.");}}},
+    {label:"⬇ Zapisz obrazek jako plik",fn:()=>{const a=document.createElement("a");a.href=img.src;a.download=imgName(img);document.body.append(a);a.click();a.remove();toast("✓ Zapisano w Pobranych");}}
+  ];
+  if(navigator.canShare){opts.push({label:"↗ Udostępnij / wyślij…",fn:async()=>{
+    try{const n=imgName(img),b=await imgBlob(img,n.endsWith("png")?"image/png":"image/jpeg"),f=new File([b],n,{type:b.type});
+      if(!navigator.canShare({files:[f]}))throw new Error("to urządzenie nie obsługuje udostępniania plików");await navigator.share({files:[f]});}
+    catch(e){if(e.name!=="AbortError")alert("Nie udało się udostępnić: "+e.message);}}});}
+  opts.push({label:"Usuń obrazek z notatki",danger:true,fn:()=>{if(!confirm("Usunąć ten obrazek z notatki?"))return;img.remove();$("#body").dispatchEvent(new Event("input"));}});
+  menu("Obrazek",opts);
+}
+$("#body").addEventListener("click",e=>{const im=e.target.closest&&e.target.closest("img");if(im&&$("#body").contains(im)){e.preventDefault();imgMenu(im);}});
+$("#body").addEventListener("contextmenu",e=>{const im=e.target.closest&&e.target.closest("img");if(im){e.preventDefault();imgMenu(im);}});
 $("#imgPick").addEventListener("change",e=>{const f=[...e.target.files];e.target.value="";if(f.length)insertImages(f);});
 document.querySelectorAll("[data-cmd]").forEach(b=>{
   b.addEventListener("mousedown",e=>e.preventDefault());
