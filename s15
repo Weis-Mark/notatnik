@@ -1,0 +1,177 @@
+#!/bin/bash
+# Notatnik (i pozniej Slownik) serwowany prosto z serwera domowego:
+#   https://<serwer>.ts.net/notatnik/   - ta sama aplikacja, ale bez blokad przegladarki.
+# Serwer sam pobiera nowe wersje z GitHuba co 30 minut.
+# Uruchomienie na serwerze:  sudo bash s15
+export LC_ALL=C
+if [ "$(id -u)" -ne 0 ]; then echo "Uruchom tak:  sudo bash s15"; exit 1; fi
+[ -f /etc/systemd/system/sync-serwer.service ] || { echo "Najpierw krok s14."; exit 1; }
+
+echo "=== 1/3 Program serwera (wersja z aplikacjami) ==="
+cat > /usr/local/lib/sync-serwer.py <<'PY'
+#!/usr/bin/env python3
+# Serwer synchronizacji dla aplikacji Notatnik i Slownik.
+# Dane: /srv/sejf/aplikacje/<aplikacja>.sqlite (w zaszyfrowanym sejfie).
+import json, os, sqlite3, threading, time, hmac, sys
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
+
+DIR = os.environ.get("SYNC_DIR", "/srv/sejf/aplikacje")
+PORT = int(os.environ.get("SYNC_PORT", "8095"))
+APPS = {"notatnik", "slownik"}
+ORIGINS = {"https://weis-mark.github.io"} | set(filter(None, os.environ.get("SYNC_ORIGINS", "").split(",")))
+LOCK = threading.Lock()
+MAXBODY = 200 * 1024 * 1024
+WWW = os.environ.get("SYNC_WWW", "/var/www/aplikacje")
+MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json",
+        ".webmanifest": "application/manifest+json", ".png": "image/png", ".svg": "image/svg+xml", ".ico": "image/x-icon",
+        ".txt": "text/plain; charset=utf-8", ".css": "text/css; charset=utf-8"}
+
+def key():
+    try: return open(os.path.join(DIR, "klucz")).read().strip()
+    except Exception: return None
+
+_db = {}
+def db(app):
+    c = _db.get(app)
+    if c is None:
+        c = sqlite3.connect(os.path.join(DIR, app + ".sqlite"), check_same_thread=False)
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("CREATE TABLE IF NOT EXISTS docs(k TEXT PRIMARY KEY, rev INTEGER, seq INTEGER, deleted INTEGER, updated REAL, v TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v INTEGER)")
+        c.execute("INSERT OR IGNORE INTO meta VALUES('seq',0)")
+        c.commit(); _db[app] = c
+    return c
+
+class H(BaseHTTPRequestHandler):
+    server_version = "sync/1"
+    def log_message(self, *a): pass
+    def cors(self):
+        o = self.headers.get("Origin")
+        if o in ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", o)
+            self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Klucz")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Access-Control-Max-Age", "600")
+    def out(self, code, obj):
+        b = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(code); self.cors()
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store")
+        self.end_headers(); self.wfile.write(b)
+    def do_OPTIONS(self):
+        self.send_response(204); self.cors(); self.send_header("Content-Length", "0"); self.end_headers()
+    def check(self):
+        p = urlparse(self.path); parts = p.path.strip("/").split("/")
+        if len(parts) != 3 or parts[0] != "api" or parts[1] not in APPS:
+            self.out(404, {"error": "nie ma takiego adresu"}); return None
+        if not os.path.ismount("/srv/sejf") and DIR.startswith("/srv/sejf"):
+            self.out(503, {"error": "sejf zamkniety"}); return None
+        k = key()
+        q = parse_qs(p.query)
+        given = self.headers.get("X-Klucz", "") or (q.get("k", [""])[0])
+        if not k or not hmac.compare_digest(given, k):
+            self.out(401, {"error": "zly klucz"}); return None
+        return parts[1], parts[2], q
+    def static(self):
+        path = urlparse(self.path).path
+        parts = path.strip("/").split("/")
+        if not parts or parts[0] not in APPS: return False
+        if path == "/" + parts[0]:
+            self.send_response(301); self.send_header("Location", path + "/"); self.send_header("Content-Length", "0"); self.end_headers(); return True
+        name = "/".join(parts[1:]) or "index.html"
+        if ".." in name or name.startswith("/"): self.out(404, {"error": "?"}); return True
+        f = os.path.join(WWW, parts[0], name)
+        if not os.path.isfile(f): self.out(404, {"error": "nie ma takiego pliku"}); return True
+        b = open(f, "rb").read()
+        self.send_response(200)
+        self.send_header("Content-Type", MIME.get(os.path.splitext(f)[1], "application/octet-stream"))
+        self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-cache")
+        if name == "sw.js": self.send_header("Service-Worker-Allowed", "/" + parts[0] + "/")
+        self.end_headers(); self.wfile.write(b); return True
+    def do_GET(self):
+        if self.static(): return
+        r = self.check()
+        if not r: return
+        app, op, q = r
+        if op == "ping": return self.out(200, {"ok": True, "app": app})
+        if op != "pull": return self.out(404, {"error": "?"})
+        since = int(q.get("since", ["0"])[0] or 0)
+        with LOCK:
+            c = db(app)
+            seq = c.execute("SELECT v FROM meta WHERE k='seq'").fetchone()[0]
+            rows = c.execute("SELECT k,rev,seq,deleted,v FROM docs WHERE seq>? ORDER BY seq", (since,)).fetchall()
+        out, size, more, nxt = [], 0, False, seq
+        for k, rv, s, d, v in rows:
+            if out and size + len(v or "") > 4000000:
+                more, nxt = True, out[-1]["_s"]; break
+            out.append({"k": k, "rev": rv, "deleted": bool(d), "v": (None if d else json.loads(v)), "_s": s}); size += len(v or "")
+        for o in out: o.pop("_s", None)
+        self.out(200, {"seq": seq, "docs": out, "more": more, "next": nxt})
+    def do_POST(self):
+        r = self.check()
+        if not r: return
+        app, op, q = r
+        if op != "push": return self.out(404, {"error": "?"})
+        n = int(self.headers.get("Content-Length", "0"))
+        if n > MAXBODY: return self.out(413, {"error": "za duzo danych naraz"})
+        try: body = json.loads(self.rfile.read(n) or b"{}")
+        except Exception: return self.out(400, {"error": "zle dane"})
+        ok, conf = [], []
+        with LOCK:
+            c = db(app)
+            seq = c.execute("SELECT v FROM meta WHERE k='seq'").fetchone()[0]
+            for d in body.get("docs", []):
+                k = d.get("k"); base = d.get("base") or 0
+                if not isinstance(k, str) or not k: continue
+                cur = c.execute("SELECT rev,deleted,v FROM docs WHERE k=?", (k,)).fetchone()
+                currev = cur[0] if cur else 0
+                if currev != base and not d.get("force"):
+                    conf.append({"k": k, "rev": currev, "deleted": bool(cur[1]) if cur else True,
+                                 "v": (json.loads(cur[2]) if cur and not cur[1] else None)})
+                    continue
+                seq += 1; rev = currev + 1
+                dele = 1 if d.get("deleted") else 0
+                v = None if dele else json.dumps(d.get("v"), ensure_ascii=False)
+                c.execute("INSERT OR REPLACE INTO docs VALUES(?,?,?,?,?,?)", (k, rev, seq, dele, time.time(), v))
+                ok.append({"k": k, "rev": rev})
+            c.execute("UPDATE meta SET v=? WHERE k='seq'", (seq,)); c.commit()
+        self.out(200, {"seq": seq, "ok": ok, "conflicts": conf})
+
+if __name__ == "__main__":
+    ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
+PY
+systemctl restart sync-serwer; echo OK
+
+echo
+echo "=== 2/3 Pobieranie aplikacji z GitHuba ==="
+cat > /usr/local/sbin/aplikacje-aktualizuj <<'X'
+#!/bin/bash
+# Pobiera najnowsze wersje aplikacji z GitHuba (uruchamiane co 30 minut).
+export LC_ALL=C
+W=/var/www/aplikacje
+get(){ # aplikacja plik...
+  local app=$1; shift; mkdir -p "${W:?}/${app:?}"
+  for f in "$@"; do
+    if curl -fsSL --max-time 60 "https://raw.githubusercontent.com/Weis-Mark/$app/main/$f" -o "${W:?}/${app:?}/.${f:?}.tmp"; then
+      mv -f "${W:?}/${app:?}/.${f:?}.tmp" "${W:?}/${app:?}/${f:?}"
+    fi
+  done
+}
+get notatnik index.html sw.js manifest.webmanifest icon-192.png icon-512.png icon-maskable-512.png apple-touch-icon.png
+chmod -R a+rX "${W:?}"
+X
+chmod 755 /usr/local/sbin/aplikacje-aktualizuj
+/usr/local/sbin/aplikacje-aktualizuj
+echo "*/30 * * * * root /usr/local/sbin/aplikacje-aktualizuj" > /etc/cron.d/aplikacje-aktualizuj
+[ -s /var/www/aplikacje/notatnik/index.html ] && echo OK || { echo "BLAD: nie udalo sie pobrac notatnika"; exit 1; }
+
+echo
+echo "=== 3/3 Sprawdzenie ==="
+NAME=$(tailscale status --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8095/notatnik/ | grep -q 200 && echo OK || echo "UWAGA: aplikacja nie odpowiada"
+echo
+echo "Notatnik na serwerze:  https://$NAME/notatnik/"
+echo "GOTOWE."

@@ -1427,7 +1427,7 @@ async function syncTest(){
 async function syncSettings(){
   const s=settings.sync||{};
   const r=await form("Synchronizacja z serwerem domowym",[
-    {k:"url",label:"Adres serwera",value:s.url||"https://serwer.tail51ec1c.ts.net"},
+    {k:"url",label:"Adres serwera",value:s.url||(location.hostname.endsWith(".ts.net")?location.origin:"https://serwer.tail51ec1c.ts.net")},
     {k:"key",label:"Klucz synchronizacji (z pliku S:\\klucz-synchronizacji.txt)",value:s.key||""}],
     "Działa, gdy na tym urządzeniu jest włączony Tailscale. Notatki zostają też na urządzeniu, więc bez połączenia wszystko działa normalnie, a zsynchronizuje się później. Pozostaw klucz pusty, aby wyłączyć synchronizację.");
   if(!r)return;
@@ -1440,7 +1440,7 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
 
 /* ---------- start ---------- */
 applyTheme();applyFocus();applyFs();setStatus("Wczytywanie…");
-load().then(()=>{$("#syncBtn").onclick=()=>syncNow(true);syUi(sy.last?"ostatnio "+new Date(sy.last).toLocaleString("pl-PL"):"jeszcze nie było");if(syOn())setTimeout(()=>syncNow(false),1500);render();warmCache();setView(curPage()?"editor":(curSec()?"pages":"sections"));setTimeout(revealActive,60);setStatus("");
+load().then(()=>{$("#syncBtn").onclick=()=>syncNow(true);syUi(sy.last?"ostatnio "+new Date(sy.last).toLocaleString("pl-PL"):"jeszcze nie było");if(syOn())setTimeout(()=>syncNow(false),1500);else if(location.hostname.endsWith(".ts.net"))setTimeout(syncSettings,800);render();warmCache();setView(curPage()?"editor":(curSec()?"pages":"sections"));setTimeout(revealActive,60);setStatus("");
   if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 }).catch(e=>{alert("Błąd wczytywania notatek: "+e.message);});
 </script>
