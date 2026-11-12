@@ -626,6 +626,7 @@ function appMenu(){
   const tn={auto:"jak w systemie",dark:"ciemny",light:"jasny"};
   menu("Ustawienia",[
     {label:"⇅ Synchronizacja z serwerem domowym"+(syOn()?" (włączona)":" (wyłączona)")+"…",fn:syncSettings},
+    ...(syOn()?[{label:"⇅ Test połączenia z serwerem",fn:syncTest}]:[]),
     {label:"⬇ Pobierz kopię zapasową (plik)",fn:exportData},
     {label:"⬆ Wczytaj kopię zapasową…",fn:()=>$("#file").click()},
     {label:"🔒 Zablokuj wszystkie chronione zakładki",fn:lockAll},
@@ -1240,10 +1241,10 @@ function syMarkAll(){
   state.notebooks.forEach(n=>n.sections.forEach(s=>syMark("sec:"+s.id)));syMark("meta");sy.lastMeta=JSON.stringify(syncMetaOf());
 }
 async function syFetch(path,body){
-  const u=settings.sync.url.replace(/\/+$/,"")+"/api/notatnik/"+path;
+  const u=settings.sync.url.replace(/\/+$/,"")+"/api/notatnik/"+path+(path.includes("?")?"&":"?")+"k="+encodeURIComponent(settings.sync.key);
   const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),body?120000:30000);
   try{
-    const r=await fetch(u,{method:body?"POST":"GET",headers:{"X-Klucz":settings.sync.key,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined,signal:ctl.signal,cache:"no-store"});
+    const r=await fetch(u,{method:body?"POST":"GET",headers:body?{"Content-Type":"text/plain;charset=UTF-8"}:{},body:body?JSON.stringify(body):undefined,signal:ctl.signal,cache:"no-store"});
     let j;try{j=await r.json();}catch(e){if(!r.ok)j={};else throw new Error("połączenie przerwane w trakcie przesyłania – spróbuj ponownie");}
     if(!r.ok)throw new Error(r.status===401?"zły klucz synchronizacji":r.status===503?"sejf na serwerze jest zamknięty":(j.error||("błąd "+r.status)));
     return j;
@@ -1251,7 +1252,7 @@ async function syFetch(path,body){
     if(e.name==="AbortError")throw new Error(body?"wysyłanie trwało za długo (słabe połączenie?)":"serwer nie odpowiada");
     if(e instanceof TypeError){
       let up=false;
-      if(path!=="ping"){try{const r=await fetch(settings.sync.url.replace(/\/+$/,"")+"/api/notatnik/ping",{headers:{"X-Klucz":settings.sync.key},cache:"no-store"});up=r.ok;}catch(x){}}
+      if(path!=="ping"){try{const r=await fetch(settings.sync.url.replace(/\/+$/,"")+"/api/notatnik/ping?k="+encodeURIComponent(settings.sync.key),{cache:"no-store"});up=r.ok;}catch(x){}}
       throw new Error(up?"połączenie zerwało się w trakcie przesyłania danych – spróbuj jeszcze raz":"brak połączenia z serwerem (sprawdź Tailscale)");
     }
     throw e;}
@@ -1410,6 +1411,18 @@ async function syncNow(manual){
     syErr=e.message;syUi("błąd – "+e.message,true);
     if(manual)alert("Synchronizacja nie powiodła się: "+e.message);
   }finally{syBusy=false;const b=$("#syncBtn");if(b)b.classList.remove("spin");}
+}
+async function syncTest(){
+  const base=settings.sync&&settings.sync.url?settings.sync.url.replace(/\/+$/,""):"";
+  if(!base){alert("Najpierw ustaw adres serwera.");return;}
+  const out=[];const t=async(label,fn)=>{const t0=Date.now();try{out.push("✓ "+label+": "+(await fn())+" ("+(Date.now()-t0)+" ms)");}catch(e){out.push("✗ "+label+": "+(e.name||"")+" "+e.message+" ("+(Date.now()-t0)+" ms)");}};
+  out.push("Internet w telefonie: "+(navigator.onLine?"tak":"NIE"));
+  await t("serwer w ogóle osiągalny",async()=>{await fetch(base+"/api/notatnik/ping",{mode:"no-cors",cache:"no-store"});return "tak";});
+  await t("odpowiedź z kluczem",async()=>{const r=await fetch(base+"/api/notatnik/ping?k="+encodeURIComponent(settings.sync.key||""),{cache:"no-store"});return r.status+" "+(await r.text()).slice(0,60);});
+  await t("pobieranie listy zmian",async()=>{const r=await fetch(base+"/api/notatnik/pull?since=999999999&k="+encodeURIComponent(settings.sync.key||""),{cache:"no-store"});return r.status;});
+  await t("wysyłanie (pusta paczka)",async()=>{const r=await fetch(base+"/api/notatnik/push?k="+encodeURIComponent(settings.sync.key||""),{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:'{"docs":[]}',cache:"no-store"});return r.status;});
+  out.push("Ostatni błąd synchronizacji: "+(syErr||"brak"));
+  alert("Test połączenia z serwerem\n\n"+out.join("\n"));
 }
 async function syncSettings(){
   const s=settings.sync||{};

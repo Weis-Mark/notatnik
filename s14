@@ -70,9 +70,11 @@ class H(BaseHTTPRequestHandler):
         if not os.path.ismount("/srv/sejf") and DIR.startswith("/srv/sejf"):
             self.out(503, {"error": "sejf zamkniety"}); return None
         k = key()
-        if not k or not hmac.compare_digest(self.headers.get("X-Klucz", ""), k):
+        q = parse_qs(p.query)
+        given = self.headers.get("X-Klucz", "") or (q.get("k", [""])[0])
+        if not k or not hmac.compare_digest(given, k):
             self.out(401, {"error": "zly klucz"}); return None
-        return parts[1], parts[2], parse_qs(p.query)
+        return parts[1], parts[2], q
     def do_GET(self):
         r = self.check()
         if not r: return
