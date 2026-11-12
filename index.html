@@ -818,20 +818,41 @@ $("#body").addEventListener("input",()=>{
 });
 /* --- cofanie i ponawianie zmian (osobna historia dla każdej otwartej strony) --- */
 const hist={id:null,stack:[],idx:-1,t:null};
-function histReset(p){clearTimeout(hist.t);hist.t=null;hist.id=p?p.id:null;hist.stack=[p?p.html||"":""];hist.idx=0;histBtns();}
+/* ustawienie kursora po liczbie znakow od poczatku notatki */
+function caretSet(off){
+  const body=$("#body");if(off==null)return;
+  const tw=document.createTreeWalker(body,NodeFilter.SHOW_TEXT);let n,left=off,last=null;
+  const r=document.createRange();
+  while((n=tw.nextNode())){last=n;if(left<=n.length){r.setStart(n,left);break;}left-=n.length;}
+  if(!r.startContainer||r.startContainer===document){if(last)r.setStart(last,last.length);else r.setStart(body,body.childNodes.length);}
+  r.collapse(true);
+  try{body.focus({preventScroll:true});}catch(e){}
+  const sel=getSelection();sel.removeAllRanges();sel.addRange(r);lastRange=r.cloneRange();
+  // przewin tylko, jesli kursor jest poza ekranem
+  const doc=$("#doc"),rc=r.getBoundingClientRect(),dc=doc.getBoundingClientRect();
+  if(rc.height||rc.top){if(rc.top<dc.top+40||rc.bottom>dc.bottom-40)doc.scrollTop+=rc.top-dc.top-dc.height/3;}
+}
+function histReset(p){clearTimeout(hist.t);hist.t=null;hist.id=p?p.id:null;hist.stack=[{h:p?p.html||"":""}];hist.idx=0;histBtns();}
 function histCommit(){
   clearTimeout(hist.t);hist.t=null;
   const h=$("#body").innerHTML;
-  if(hist.stack[hist.idx]===h)return;
-  hist.stack=hist.stack.slice(0,hist.idx+1);hist.stack.push(h);
+  if(hist.stack[hist.idx]&&hist.stack[hist.idx].h===h)return;
+  hist.stack=hist.stack.slice(0,hist.idx+1);hist.stack.push({h});
   if(hist.stack.length>300)hist.stack.shift();
   hist.idx=hist.stack.length-1;histBtns();
 }
 function histPush(now){if(now){histCommit();return;}clearTimeout(hist.t);hist.t=setTimeout(histCommit,700);histBtns(true);}
 function histApply(){
   const p=curPage();if(!p||p.id!==hist.id)return;
-  $("#body").innerHTML=hist.stack[hist.idx];
-  p.html=hist.stack[hist.idx];p.updated=Date.now();touch(curSec());histBtns();
+  const body=$("#body"),doc=$("#doc"),top=doc.scrollTop,e=hist.stack[hist.idx];
+  const a=body.textContent;
+  body.innerHTML=e.h;doc.scrollTop=top;
+  const b=body.textContent;
+  // kursor tam, gdzie byla cofnieta/ponowiona zmiana
+  let i=0;const m=Math.min(a.length,b.length);while(i<m&&a[i]===b[i])i++;
+  let j=0;while(j<m-i&&a[a.length-1-j]===b[b.length-1-j])j++;
+  p.html=e.h;p.updated=Date.now();touch(curSec());histBtns();
+  caretSet(Math.max(i,b.length-j));
 }
 function undo(){if(hist.t)histCommit();if(hist.idx>0){hist.idx--;histApply();}}
 function redo(){if(hist.t)histCommit();if(hist.idx<hist.stack.length-1){hist.idx++;histApply();}}
