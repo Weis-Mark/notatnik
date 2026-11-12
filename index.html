@@ -1242,7 +1242,7 @@ function syMarkAll(){
 }
 async function syFetch(path,body){
   const u=settings.sync.url.replace(/\/+$/,"")+"/api/notatnik/"+path+(path.includes("?")?"&":"?")+"k="+encodeURIComponent(settings.sync.key);
-  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),body?120000:30000);
+  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),body?180000:(path.startsWith("pull")?180000:30000));
   try{
     const r=await fetch(u,{method:body?"POST":"GET",headers:body?{"Content-Type":"text/plain;charset=UTF-8"}:{},body:body?JSON.stringify(body):undefined,signal:ctl.signal,cache:"no-store"});
     let j;try{j=await r.json();}catch(e){if(!r.ok)j={};else throw new Error("połączenie przerwane w trakcie przesyłania – spróbuj ponownie");}
