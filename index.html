@@ -104,6 +104,10 @@ body.focus #meta{padding-left:32px;padding-right:32px}
 #body:empty:before{content:"Zacznij pisać…";color:var(--muted)}
 #body p{margin:0 0 .45em}
 #body h2{font-size:1.25em;margin:.8em 0 .35em}
+#body b,#body strong{font-weight:800;-webkit-text-stroke:.015em currentColor}
+@media (pointer:coarse),(max-width:699px){#body b,#body strong{-webkit-text-stroke:.045em currentColor}}
+.cA{font-weight:800;font-size:20px;line-height:1}
+.cbtn{font-weight:700;border-bottom:3px solid #e53935;line-height:1;padding-bottom:1px}
 #body table{border-collapse:collapse;margin:.5em 0}
 #body td{border:1px solid var(--line);padding:4px 8px;vertical-align:top}
 #body td p{margin:0}
@@ -199,6 +203,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
       <button data-cmd="italic" title="Kursywa (Ctrl+I)"><i>I</i></button>
       <button data-cmd="underline" title="Podkreślenie (Ctrl+U)"><u>U</u></button>
       <button data-cmd="strikeThrough" title="Przekreślenie"><s>S</s></button>
+      <button class="colorBtn" title="Kolor tekstu i tła (zakreślacz)"><span class="cbtn">A</span></button>
       <button data-cmd="h2" title="Nagłówek">H</button>
       <button data-cmd="insertUnorderedList" title="Lista punktowana">•</button>
       <button data-cmd="insertOrderedList" title="Lista numerowana">1.</button>
@@ -234,7 +239,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
   </div>
 </main>
 <div id="floatbar" class="hidden">
-  <button data-cmd="bold" title="Pogrubienie"><b>B</b></button><button data-cmd="italic" title="Kursywa"><i>I</i></button><button data-cmd="underline" title="Podkreślenie"><u>U</u></button><button data-cmd="strikeThrough" title="Przekreślenie"><s>S</s></button><button data-cmd="h2" title="Nagłówek">H</button><button data-cmd="insertUnorderedList" title="Lista">•</button><span class="sep"></span><button data-cmd="justifyLeft" title="Do lewej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="10" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="10" y2="12.9"/></svg></button><button data-cmd="justifyCenter" title="Do środka"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="4" y1="6.3" x2="12" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="4" y1="12.9" x2="12" y2="12.9"/></svg></button><button data-cmd="justifyRight" title="Do prawej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="6" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="6" y1="12.9" x2="14" y2="12.9"/></svg></button><button data-cmd="justifyFull" title="Wyjustuj"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="14" y2="12.9"/></svg></button><span class="sep"></span><button data-cmd="removeFormat" title="Usuń formatowanie">⌫</button>
+  <button data-cmd="bold" title="Pogrubienie"><b>B</b></button><button data-cmd="italic" title="Kursywa"><i>I</i></button><button data-cmd="underline" title="Podkreślenie"><u>U</u></button><button data-cmd="strikeThrough" title="Przekreślenie"><s>S</s></button><button class="colorBtn" title="Kolor"><span class="cbtn">A</span></button><button data-cmd="h2" title="Nagłówek">H</button><button data-cmd="insertUnorderedList" title="Lista">•</button><span class="sep"></span><button data-cmd="justifyLeft" title="Do lewej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="10" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="10" y2="12.9"/></svg></button><button data-cmd="justifyCenter" title="Do środka"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="4" y1="6.3" x2="12" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="4" y1="12.9" x2="12" y2="12.9"/></svg></button><button data-cmd="justifyRight" title="Do prawej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="6" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="6" y1="12.9" x2="14" y2="12.9"/></svg></button><button data-cmd="justifyFull" title="Wyjustuj"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="14" y2="12.9"/></svg></button><span class="sep"></span><button data-cmd="removeFormat" title="Usuń formatowanie">⌫</button>
 </div>
 <div id="modal" class="modal hidden"></div>
 <input type="file" id="file" accept=".json,application/json" class="hidden">
@@ -461,6 +466,12 @@ function menu(title,opts,grid){
   m.classList.remove("hidden");
 }
 const move=(arr,i,d)=>{const j=i+d;if(j<0||j>=arr.length)return;[arr[i],arr[j]]=[arr[j],arr[i]];};
+async function moveToPos(arr,item,after){
+  const i=arr.indexOf(item);if(i<0)return;
+  const r=await form("Przesuń na pozycję",[{k:"n",label:"Numer pozycji (1 = góra, "+arr.length+" = dół)",value:String(i+1),type:"number"}],"Teraz: pozycja "+(i+1)+" z "+arr.length+".");
+  if(!r)return;let n=parseInt(r.n,10);if(!n)return;n=Math.max(1,Math.min(arr.length,n));
+  arr.splice(arr.indexOf(item),1);arr.splice(n-1,0,item);after();
+}
 
 /* ---------- widok ---------- */
 function revealActive(){
@@ -564,6 +575,7 @@ function secMenu(sec){
     {label:"⤒ Na samą górę listy",fn:()=>{nb.sections.splice(i,1);nb.sections.unshift(sec);save();render();revealActive();}},
     {label:"↑ Przesuń w górę",fn:()=>{move(nb.sections,i,-1);save();render();}},
     {label:"↓ Przesuń w dół",fn:()=>{move(nb.sections,i,1);save();render();}},
+    {label:"↕ Przesuń na pozycję nr… (teraz "+(i+1)+" z "+nb.sections.length+")",fn:()=>moveToPos(nb.sections,sec,()=>{save();render();revealActive();})},
     {label:"⤓ Na sam dół listy",fn:()=>{nb.sections.splice(i,1);nb.sections.push(sec);save();render();revealActive();}}
   ];
   if(!sec.enc)opts.push({label:"🔒 Ustaw hasło",fn:()=>setPassword(sec)});
@@ -581,6 +593,7 @@ function pageMenu(pg){
     {label:"⤒ Na samą górę listy",fn:()=>{ps.splice(i,1);ps.unshift(p);touch(sec);renderPages();revealActive();}},
     {label:"↑ Przesuń w górę",fn:()=>{move(ps,i,-1);touch(sec);renderPages();}},
     {label:"↓ Przesuń w dół",fn:()=>{move(ps,i,1);touch(sec);renderPages();}},
+    {label:"↕ Przesuń na pozycję nr… (teraz "+(i+1)+" z "+ps.length+")",fn:()=>moveToPos(ps,p,()=>{touch(sec);renderPages();revealActive();})},
     {label:"⤓ Na sam dół listy",fn:()=>{ps.splice(i,1);ps.push(p);touch(sec);renderPages();revealActive();}},
     {label:"➜ Przenieś do innej zakładki…",fn:()=>moveMenu(p,sec,false)},
     {label:"⧉ Kopiuj do innej zakładki…",fn:()=>moveMenu(p,sec,true)},
@@ -1116,6 +1129,37 @@ function imgMenu(img){
 $("#body").addEventListener("click",e=>{const im=e.target.closest&&e.target.closest("img");if(im&&$("#body").contains(im)){e.preventDefault();imgMenu(im);}});
 $("#body").addEventListener("contextmenu",e=>{const im=e.target.closest&&e.target.closest("img");if(im){e.preventDefault();imgMenu(im);}});
 $("#imgPick").addEventListener("change",e=>{const f=[...e.target.files];e.target.value="";if(f.length)insertImages(f);});
+/* --- kolor tekstu i tła --- */
+const FG=["#e53935","#f57c00","#2e9d4a","#1e88e5","#8e44ad"],BG=["rgba(255,213,0,.45)","rgba(76,175,80,.4)","rgba(33,150,243,.35)","rgba(244,67,54,.35)","rgba(156,39,176,.35)"];
+function applyColor(kind,val){
+  if(hist.t)histCommit();
+  const body0=$("#body");
+  if(lastRange&&body0.contains(lastRange.startContainer)){try{body0.focus({preventScroll:true});}catch(e){}const sl=getSelection();sl.removeAllRanges();sl.addRange(lastRange);}
+  const r=restoreSel();if(!r||r.collapsed){toast("Najpierw zaznacz tekst");return;}
+  const SENT=kind==="fg"?"rgb(1, 2, 3)":"rgb(1, 2, 4)",prop=kind==="fg"?"color":"background-color",body=$("#body");
+  try{document.execCommand("styleWithCSS",false,true);}catch(e){}
+  document.execCommand(kind==="fg"?"foreColor":"hiliteColor",false,val||SENT);
+  try{document.execCommand("styleWithCSS",false,false);}catch(e){}
+  if(!val)body.querySelectorAll("[style]").forEach(el=>{
+    const v=kind==="fg"?el.style.color:el.style.backgroundColor;if(v!==SENT)return;
+    let a=el.parentElement,inh=false;while(a&&a!==body){if(kind==="fg"?a.style.color:a.style.backgroundColor){inh=true;break;}a=a.parentElement;}
+    if(inh)el.style.setProperty(prop,kind==="fg"?"var(--text)":"transparent");else el.style.removeProperty(prop);
+    if(el.tagName==="SPAN"&&!(el.getAttribute("style")||"").trim()){el.replaceWith(...el.childNodes);}
+  });
+  body.dispatchEvent(new Event("input"));histCommit();
+}
+function colorMenu(){
+  menu("Kolor: A = tekst, ▇ = tło",[
+    ...FG.map(c=>({html:`<span class="cA" style="color:${c}">A</span>`,fn:()=>applyColor("fg",c)})),
+    {html:`<span class="cA" style="text-decoration:line-through">A</span>`,fn:()=>applyColor("fg",null)},
+    ...BG.map(c=>({html:`<span class="sw" style="background:${c}"></span>`,fn:()=>applyColor("bg",c)})),
+    {html:`<span class="sw" style="border:1px dashed var(--muted)"></span>`,fn:()=>applyColor("bg",null)}
+  ],true);
+}
+document.querySelectorAll(".colorBtn").forEach(b=>{
+  b.addEventListener("mousedown",e=>e.preventDefault());b.addEventListener("pointerdown",e=>e.preventDefault());
+  b.onclick=()=>{restoreSel();colorMenu();};
+});
 document.querySelectorAll("[data-cmd]").forEach(b=>{
   b.addEventListener("mousedown",e=>e.preventDefault());
   b.addEventListener("pointerdown",e=>e.preventDefault());
