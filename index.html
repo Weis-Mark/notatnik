@@ -852,7 +852,10 @@ function histCommit(){
   const h=$("#body").innerHTML;
   if(hist.stack[hist.idx]&&hist.stack[hist.idx].h===h)return;
   hist.stack=hist.stack.slice(0,hist.idx+1);hist.stack.push({h});
-  if(hist.stack.length>300)hist.stack.shift();
+  // limit pamieci: duze strony (np. z obrazkami) nie moga zapchac telefonu
+  let tot=0;for(const e of hist.stack)tot+=e.h.length;
+  const LIM=matchMedia("(pointer:coarse)").matches?8e6:40e6;
+  while(hist.stack.length>2&&(hist.stack.length>300||tot>LIM)){tot-=hist.stack.shift().h.length;}
   hist.idx=hist.stack.length-1;histBtns();
 }
 function histPush(now){if(now){histCommit();return;}clearTimeout(hist.t);hist.t=setTimeout(histCommit,700);histBtns(true);}
@@ -1391,8 +1394,10 @@ function syUi(t,err){
   b.classList.toggle("hidden",!syOn());b.classList.toggle("err",!!err);
   b.title="Synchronizacja z serwerem: "+t;
 }
+let syWaitUntil=0;
 async function syncNow(manual){
   if(!syOn()){if(manual)syncSettings();return;}
+  if(!manual&&(Date.now()<syWaitUntil||navigator.onLine===false))return;   // bez sieci/Tailscale nie probuj co chwile
   if(syBusy)return;syBusy=true;syUi("trwa…");$("#syncBtn").classList.add("spin");
   try{
     await doSave();
@@ -1448,11 +1453,12 @@ async function syncNow(manual){
       if(!conf.length)break;
       docs=conf.map(c=>({k:c.k,rev:c.rev,deleted:c.deleted,v:c.v}));pulled={seq:0};
     }
-    sy.last=Date.now();await idbWrite([["sync",sy]],[]);
+    sy.last=Date.now();syWaitUntil=0;await idbWrite([["sync",sy]],[]);
     syUi("zsynchronizowano "+new Date().toLocaleTimeString("pl-PL"));syErr="";
     if(manual)toast("✓ Zsynchronizowano z serwerem");
   }catch(e){
     syErr=e.message;syUi("błąd – "+e.message,true);
+    syWaitUntil=Date.now()+(/Tailscale|nie odpowiada/.test(e.message)?120000:30000);
     if(manual)alert("Synchronizacja nie powiodła się: "+e.message);
   }finally{syBusy=false;const b=$("#syncBtn");if(b)b.classList.remove("spin");}
 }
