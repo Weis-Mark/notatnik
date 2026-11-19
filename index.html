@@ -1147,21 +1147,58 @@ $("#body").addEventListener("contextmenu",e=>{const im=e.target.closest&&e.targe
 $("#imgPick").addEventListener("change",e=>{const f=[...e.target.files];e.target.value="";if(f.length)insertImages(f);});
 /* --- kolor tekstu i tła --- */
 const FG=["#e53935","#f57c00","#2e9d4a","#1e88e5","#8e44ad"],BG=["rgba(255,213,0,.45)","rgba(76,175,80,.4)","rgba(33,150,243,.35)","rgba(244,67,54,.35)","rgba(156,39,176,.35)"];
+/* przywrócenie standardowego koloru / usunięcie tła – własna implementacja, niezależna od przeglądarki */
+function clearColorRange(kind,r){
+  const body=$("#body"),fg=kind==="fg",prop=fg?"color":"background-color";
+  // 1. podziel węzły tekstowe na granicach zaznaczenia
+  let sc=r.startContainer,so=r.startOffset,ec=r.endContainer,eo=r.endOffset;
+  if(ec.nodeType===3&&eo>0&&eo<ec.length){ec.splitText(eo);}
+  if(sc.nodeType===3&&so>0&&so<sc.length){const nn=sc.splitText(so);if(ec===sc){ec=nn;eo=eo-so;}sc=nn;so=0;}
+  const rr=document.createRange();rr.setStart(sc,so);rr.setEnd(ec,eo);
+  // 2. węzły tekstowe w całości w zaznaczeniu
+  const sel=new Set(),w=document.createTreeWalker(body,4);let n;
+  while(n=w.nextNode()){if(!n.nodeValue.length)continue;
+    const nr=document.createRange();nr.selectNodeContents(n);
+    if(rr.compareBoundaryPoints(Range.START_TO_START,nr)<=0&&rr.compareBoundaryPoints(Range.END_TO_END,nr)>=0)sel.add(n);}
+  if(!sel.size)return null;
+  const val=el=>el.tagName==="A"?"":fg?(el.style.color||(el.tagName==="FONT"?el.getAttribute("color")||"":"")):(el.style.backgroundColor||el.style.background||"");
+  const strip=el=>{if(fg){el.style.removeProperty("color");if(el.tagName==="FONT")el.removeAttribute("color");}
+    else{el.style.removeProperty("background-color");el.style.removeProperty("background");}
+    if(el.hasAttribute("style")&&!el.getAttribute("style").trim())el.removeAttribute("style");};
+  const texts=el=>{const t=document.createTreeWalker(el,4),o=[];let x;while(x=t.nextNode())if(x.nodeValue.length)o.push(x);return o;};
+  // 3. element kolorowy częściowo zaznaczony – przenieś jego kolor na niezaznaczony tekst, a z niego samego zdejmij
+  [...body.querySelectorAll("*")].forEach(el=>{
+    const v=val(el);if(!v)return;const tx=texts(el);
+    if(!tx.some(t=>sel.has(t))||tx.every(t=>sel.has(t)))return;
+    strip(el);
+    tx.forEach(t=>{if(sel.has(t)||!t.nodeValue.trim())return;
+      let a=t.parentElement;while(a&&a!==el){if(val(a))return;a=a.parentElement;}
+      const sp=document.createElement("span");sp.style.setProperty(prop,v);t.replaceWith(sp);sp.append(t);});
+  });
+  // 4. elementy kolorowe w całości zaznaczone – zdejmij kolor
+  [...body.querySelectorAll("*")].forEach(el=>{if(val(el)){const tx=texts(el);if(tx.length&&tx.every(t=>sel.has(t)))strip(el);}});
+  // 4b. linki mają kolor z motywu – zaznaczony tekst w linku dostaje standardowy kolor
+  if(fg)sel.forEach(t=>{const l=t.parentElement&&t.parentElement.closest("a");if(!l||!body.contains(l))return;
+    const sp=document.createElement("span");sp.style.color="var(--text)";t.replaceWith(sp);sp.append(t);});
+  // 5. sprzątanie pustych spanów
+  body.querySelectorAll("span:not([style]),font:not([color]):not([size]):not([face])").forEach(el=>el.replaceWith(...el.childNodes));
+  const arr=[...sel].filter(t=>body.contains(t));if(!arr.length)return null;
+  const out=document.createRange();out.setStart(arr[0],0);const l=arr[arr.length-1];out.setEnd(l,l.length);return out;
+}
 function applyColor(kind,val){
   if(hist.t)histCommit();
   const body0=$("#body");
   if(lastRange&&body0.contains(lastRange.startContainer)){try{body0.focus({preventScroll:true});}catch(e){}const sl=getSelection();sl.removeAllRanges();sl.addRange(lastRange);}
   const r=restoreSel();if(!r||r.collapsed){toast("Najpierw zaznacz tekst");return;}
-  const SENT=kind==="fg"?"rgb(1, 2, 3)":"rgb(1, 2, 4)",prop=kind==="fg"?"color":"background-color",body=$("#body");
-  try{document.execCommand("styleWithCSS",false,true);}catch(e){}
-  document.execCommand(kind==="fg"?"foreColor":"hiliteColor",false,val||SENT);
-  try{document.execCommand("styleWithCSS",false,false);}catch(e){}
-  if(!val)body.querySelectorAll("[style]").forEach(el=>{
-    const v=kind==="fg"?el.style.color:el.style.backgroundColor;if(v!==SENT)return;
-    let a=el.parentElement,inh=false;while(a&&a!==body){if(kind==="fg"?a.style.color:a.style.backgroundColor){inh=true;break;}a=a.parentElement;}
-    if(inh)el.style.setProperty(prop,kind==="fg"?"var(--text)":"transparent");else el.style.removeProperty(prop);
-    if(el.tagName==="SPAN"&&!(el.getAttribute("style")||"").trim()){el.replaceWith(...el.childNodes);}
-  });
+  const body=$("#body");
+  if(!val){
+    const out=clearColorRange(kind,r);
+    if(out){const sl=getSelection();sl.removeAllRanges();sl.addRange(out);lastRange=out.cloneRange();}
+  }else{
+    try{document.execCommand("styleWithCSS",false,true);}catch(e){}
+    document.execCommand(kind==="fg"?"foreColor":"hiliteColor",false,val);
+    try{document.execCommand("styleWithCSS",false,false);}catch(e){}
+  }
   body.dispatchEvent(new Event("input"));histCommit();
 }
 function colorMenu(){
