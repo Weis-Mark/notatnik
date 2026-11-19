@@ -217,6 +217,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
       <button data-cmd="justifyFull" title="Wyjustuj (do obu krawędzi)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="14" y2="12.9"/></svg></button>
       <span class="sep"></span>
       <button data-cmd="removeFormat" title="Usuń formatowanie">⌫</button>
+      <button data-cmd="unlinkAll" title="Usuń link (tekst zostaje)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6.5 9.5l-1.8 1.8a2 2 0 0 1-2.8-2.8L3.7 6.7"/><path d="M9.5 6.5l1.8-1.8a2 2 0 0 1 2.8 2.8l-1.8 1.8"/><line x1="2" y1="2" x2="4" y2="4"/><line x1="12" y1="12" x2="14" y2="14"/><line x1="9" y1="2" x2="9.5" y2="3.5"/><line x1="7" y1="14" x2="6.5" y2="12.5"/></svg></button>
       <span class="sp"></span><span id="status"></span>
       <button id="pageMore" title="Strona – opcje">⋯</button>
     </div>
@@ -240,7 +241,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
   </div>
 </main>
 <div id="floatbar" class="hidden">
-  <button data-cmd="bold" title="Pogrubienie"><b>B</b></button><button data-cmd="italic" title="Kursywa"><i>I</i></button><button data-cmd="underline" title="Podkreślenie"><u>U</u></button><button data-cmd="strikeThrough" title="Przekreślenie"><s>S</s></button><button class="colorBtn" title="Kolor"><span class="cbtn">A</span></button><button data-cmd="h2" title="Nagłówek">H</button><button data-cmd="insertUnorderedList" title="Lista">•</button><span class="sep"></span><button data-cmd="justifyLeft" title="Do lewej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="10" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="10" y2="12.9"/></svg></button><button data-cmd="justifyCenter" title="Do środka"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="4" y1="6.3" x2="12" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="4" y1="12.9" x2="12" y2="12.9"/></svg></button><button data-cmd="justifyRight" title="Do prawej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="6" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="6" y1="12.9" x2="14" y2="12.9"/></svg></button><button data-cmd="justifyFull" title="Wyjustuj"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="14" y2="12.9"/></svg></button><span class="sep"></span><button data-cmd="removeFormat" title="Usuń formatowanie">⌫</button>
+  <button data-cmd="bold" title="Pogrubienie"><b>B</b></button><button data-cmd="italic" title="Kursywa"><i>I</i></button><button data-cmd="underline" title="Podkreślenie"><u>U</u></button><button data-cmd="strikeThrough" title="Przekreślenie"><s>S</s></button><button class="colorBtn" title="Kolor"><span class="cbtn">A</span></button><button data-cmd="h2" title="Nagłówek">H</button><button data-cmd="insertUnorderedList" title="Lista">•</button><span class="sep"></span><button data-cmd="justifyLeft" title="Do lewej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="10" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="10" y2="12.9"/></svg></button><button data-cmd="justifyCenter" title="Do środka"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="4" y1="6.3" x2="12" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="4" y1="12.9" x2="12" y2="12.9"/></svg></button><button data-cmd="justifyRight" title="Do prawej"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="6" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="6" y1="12.9" x2="14" y2="12.9"/></svg></button><button data-cmd="justifyFull" title="Wyjustuj"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="12.9" x2="14" y2="12.9"/></svg></button><span class="sep"></span><button data-cmd="removeFormat" title="Usuń formatowanie">⌫</button><button data-cmd="unlinkAll" title="Usuń link (tekst zostaje)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6.5 9.5l-1.8 1.8a2 2 0 0 1-2.8-2.8L3.7 6.7"/><path d="M9.5 6.5l1.8-1.8a2 2 0 0 1 2.8 2.8l-1.8 1.8"/><line x1="2" y1="2" x2="4" y2="4"/><line x1="12" y1="12" x2="14" y2="14"/><line x1="9" y1="2" x2="9.5" y2="3.5"/><line x1="7" y1="14" x2="6.5" y2="12.5"/></svg></button>
 </div>
 <div id="modal" class="modal hidden"></div>
 <input type="file" id="file" accept=".json,application/json" class="hidden">
@@ -1215,17 +1216,34 @@ document.querySelectorAll(".colorBtn").forEach(b=>{
   b.addEventListener("mousedown",e=>e.preventDefault());b.addEventListener("pointerdown",e=>e.preventDefault());
   b.onclick=()=>{restoreSel();colorMenu();};
 });
+/* --- usuwanie linku: zostaje sam tekst --- */
+function unlinkSel(){
+  const body=$("#body"),r=restoreSel();if(!r)return 0;
+  let as=[];
+  if(r.collapsed){const n=r.startContainer,el=n.nodeType===1?n:n.parentElement,a=el&&el.closest("a");if(a&&body.contains(a))as=[a];}
+  else as=[...body.querySelectorAll("a")].filter(a=>r.intersectsNode(a));
+  if(!as.length)return 0;
+  let first=null,last=null;
+  as.forEach(a=>{const kids=[...a.childNodes];
+    kids.forEach(k=>{if(k.nodeType===1&&k.tagName==="SPAN"&&k.style.color==="var(--text)"){k.style.removeProperty("color");if(!k.getAttribute("style").trim())k.replaceWith(...k.childNodes);}});
+    const nk=[...a.childNodes];if(nk.length){if(!first)first=nk[0];last=nk[nk.length-1];}
+    a.replaceWith(...nk);});
+  if(first&&last&&r.collapsed===false){try{const nr=document.createRange();nr.setStartBefore(first);nr.setEndAfter(last);const sl=getSelection();sl.removeAllRanges();sl.addRange(nr);lastRange=nr.cloneRange();}catch(e){}}
+  return as.length;
+}
 document.querySelectorAll("[data-cmd]").forEach(b=>{
   b.addEventListener("mousedown",e=>e.preventDefault());
   b.addEventListener("pointerdown",e=>e.preventDefault());
   b.onclick=()=>{
     const c=b.dataset.cmd;
     if(c==="selectStep"){selectStep();return;}
+    if(c==="unlinkAll"){if(hist.t)histCommit();const n=unlinkSel();if(n){$("#body").dispatchEvent(new Event("input"));histCommit();toast(n===1?"✓ Usunięto link":"✓ Usunięto linki: "+n);}else toast("Ustaw kursor w linku albo zaznacz tekst z linkiem");return;}
     if(ALIGN[c]){if(hist.t)histCommit();if(applyAlign(c)){$("#body").dispatchEvent(new Event("input"));histCommit();updateAlignBtns();}return;}
     if(hist.t)histCommit();
     restoreSel();
     if(c==="h2"){const cur=(document.queryCommandValue("formatBlock")||"").toLowerCase();document.execCommand("formatBlock",false,cur==="h2"?"p":"h2");}
     else document.execCommand(c,false,null);
+    if(c==="removeFormat")unlinkSel();
     $("#body").dispatchEvent(new Event("input"));histCommit();
     if(typeof updateAlignBtns==="function")updateAlignBtns();
   };
