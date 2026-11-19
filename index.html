@@ -359,10 +359,11 @@ function fixUi(){
 /* ---------- zapis ---------- */
 let saveT=null;
 function setStatus(t){$("#status").textContent=t;}
-function save(){clearTimeout(saveT);setStatus("…");saveT=setTimeout(doSave,400);}
+function save(){clearTimeout(saveT);setStatus("…");saveT=setTimeout(doSave,matchMedia("(pointer:coarse)").matches?1500:600);}
 function touch(sec){if(sec){if(sec.enc)mem.dirtyEnc.add(sec.id);dirtySecs.add(sec.id);}save();}
 let saving=null;
 async function doSave(){
+  if(typeof bodyFlush==="function")bodyFlush();
   clearTimeout(saveT);saveT=null;
   if(saving){await saving;}           // nie nakładaj zapisów na siebie
   saving=(async()=>{
@@ -553,6 +554,7 @@ function renderEditor(){
   $("#pageMore").classList.toggle("hidden",!p);
   if(!p)return;
   $("#title").value=p.title||"";
+  if(typeof bodyFlush==="function")bodyFlush();
   $("#body").innerHTML=p.html||"";
   if(typeof histReset==="function")histReset(p);
   $("#meta").textContent="Zmieniono: "+new Date(p.updated).toLocaleString("pl-PL");
@@ -824,12 +826,22 @@ $("#focusBtn").onclick=()=>toggleFocus();
 document.querySelectorAll(".back").forEach(b=>b.onclick=()=>setView(b.dataset.back));
 $("#title").addEventListener("input",()=>{const p=curPage();if(!p)return;p.title=$("#title").value;p.updated=Date.now();touch(curSec());renderPages();});
 $("#title").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("#body").focus();}});
+/* zapis tresci nie przy kazdym klawiszu, tylko co ~0,7 s - duze notatki nie zapychaja pamieci telefonu */
+let bodyPend=null,bodyT=null;
+function bodyFlush(){
+  clearTimeout(bodyT);bodyT=null;
+  if(!bodyPend)return;const {p,sec}=bodyPend;bodyPend=null;
+  p.html=$("#body").innerHTML;p.updated=Date.now();touch(sec);
+}
 $("#body").addEventListener("input",()=>{
   const p=curPage();if(!p)return;
   if(window.CSS&&CSS.highlights)CSS.highlights.delete("hit");
-  p.html=$("#body").innerHTML;p.updated=Date.now();touch(curSec());
+  bodyPend={p,sec:curSec()};
+  if(!bodyT)bodyT=setTimeout(bodyFlush,700);
   histPush(false);
 });
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"){bodyFlush();if(saveT)doSave();}});
+addEventListener("pagehide",()=>{bodyFlush();if(saveT)doSave();});
 /* --- cofanie i ponawianie zmian (osobna historia dla każdej otwartej strony) --- */
 const hist={id:null,stack:[],idx:-1,t:null};
 /* ustawienie kursora po liczbie znakow od poczatku notatki */
@@ -860,6 +872,7 @@ function histCommit(){
 }
 function histPush(now){if(now){histCommit();return;}clearTimeout(hist.t);hist.t=setTimeout(histCommit,700);histBtns(true);}
 function histApply(){
+  if(typeof bodyFlush==="function")bodyFlush();
   const p=curPage();if(!p||p.id!==hist.id)return;
   const body=$("#body"),doc=$("#doc"),top=doc.scrollTop,e=hist.stack[hist.idx];
   const a=body.textContent;
