@@ -147,6 +147,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
 .opt.danger{color:var(--danger)}
 .opts.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:6px}
 .opts.grid .opt{justify-content:center}
+.opts.grid .opt.wide{grid-column:1/-1;justify-content:flex-start;border:1px solid var(--line)}
 .sw{display:inline-block;width:24px;height:24px;border-radius:6px;flex:none}
 @media (max-width:699px){
   header .brand{display:none}
@@ -461,7 +462,7 @@ function menu(title,opts,grid){
   const m=$("#modal");
   m.innerHTML=`<div class="box"><h3>${esc(title)}</h3><div class="opts${grid?" grid":""}"></div><div class="btns"><button data-c>Zamknij</button></div></div>`;
   const o=m.querySelector(".opts");
-  opts.forEach(op=>{const b=document.createElement("button");b.className="opt"+(op.danger?" danger":"");b.innerHTML=op.html||esc(op.label);b.onclick=()=>{closeModal();if(op.fn)op.fn();};o.append(b);});
+  opts.forEach(op=>{const b=document.createElement("button");b.className="opt"+(op.danger?" danger":"")+(op.wide?" wide":"");b.innerHTML=op.html||esc(op.label);b.onclick=()=>{closeModal();if(op.fn)op.fn();};o.append(b);});
   m.querySelector("[data-c]").onclick=closeModal;
   m.onclick=e=>{if(e.target===m)closeModal();};
   m.classList.remove("hidden");
@@ -1047,8 +1048,7 @@ function cleanPasteHtml(html){
     if(st.fontStyle==="italic")wrap("i");
     const td=(st.textDecorationLine||st.textDecoration||"");if(/underline/.test(td))wrap("u");if(/line-through/.test(td))wrap("s");
     const css=[];
-    const col=st.color&&pasteColor(st.color);if(col)css.push("color:"+col);
-    const bg=(st.backgroundColor||st.background)&&pasteColor(st.backgroundColor||st.background);if(bg)css.push("background-color:"+bg);
+    // kolory tekstu i tła z wklejanego tekstu są pomijane – wklejony tekst ma standardowy kolor notatki
     const fs=st.fontSize&&pasteLen(st.fontSize);if(fs&&Math.abs(fs-11)>=1.5)css.push("font-size:"+Math.min(2.6,Math.max(0.7,fs/11)).toFixed(2)+"em");
     if(css.length){const sp=document.createElement("span");sp.setAttribute("style",css.join(";"));sp.append(inner);inner=sp;}
     return inner;
@@ -1166,8 +1166,10 @@ function applyColor(kind,val){
 }
 function colorMenu(){
   menu("Kolor: A = tekst, ▇ = tło",[
+    {wide:true,html:`<span class="cA" style="color:var(--text)">A</span> Standardowy kolor tekstu (jak reszta notatki)`,fn:()=>applyColor("fg",null)},
+    {wide:true,html:`<span class="sw" style="border:1px dashed var(--muted)"></span> Usuń kolor tekstu i tło (zakreślenie)`,fn:()=>{applyColor("fg",null);applyColor("bg",null);}},
     ...FG.map(c=>({html:`<span class="cA" style="color:${c}">A</span>`,fn:()=>applyColor("fg",c)})),
-    {html:`<span class="cA" style="text-decoration:line-through">A</span>`,fn:()=>applyColor("fg",null)},
+    {html:`<span class="cA" style="color:var(--text)">A</span>`,fn:()=>applyColor("fg",null)},
     ...BG.map(c=>({html:`<span class="sw" style="background:${c}"></span>`,fn:()=>applyColor("bg",c)})),
     {html:`<span class="sw" style="border:1px dashed var(--muted)"></span>`,fn:()=>applyColor("bg",null)}
   ],true);
